@@ -22,10 +22,10 @@ restart: down up
 .PHONY: psql migrate reset-db
 
 psql:
-	PGPASSWORD=${POSTGRES_PASSWORD:-ni_password} psql -h ${POSTGRES_HOST:-localhost} -U ${POSTGRES_USER:-ni} -d ${POSTGRES_DB:-ni}
+	PGPASSWORD=ni_password psql -h localhost -U ni -d ni
 
 migrate:
-	cat db/schema.sql | make psql
+	PGPASSWORD=ni_password psql -h localhost -U ni -d ni -f db/01-init-migration-system.sql
 
 reset-db:
 	docker compose down postgres

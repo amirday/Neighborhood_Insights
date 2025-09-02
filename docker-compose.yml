@@ -6,9 +6,20 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-ni}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ni_password}
       POSTGRES_DB: ${POSTGRES_DB:-ni}
+      # Connection pooling and performance settings
+      POSTGRES_SHARED_PRELOAD_LIBRARIES: "pg_stat_statements"
+      POSTGRES_MAX_CONNECTIONS: "200"
+      POSTGRES_SHARED_BUFFERS: "256MB" 
+      POSTGRES_WORK_MEM: "4MB"
+      POSTGRES_MAINTENANCE_WORK_MEM: "64MB"
+      POSTGRES_EFFECTIVE_CACHE_SIZE: "1GB"
+      POSTGRES_RANDOM_PAGE_COST: "1.1" # SSD optimization
+      POSTGRES_LOG_STATEMENT: "all" # For development
+      POSTGRES_LOG_MIN_DURATION_STATEMENT: "1000" # Log slow queries (1s+)
     ports: ["5432:5432"]
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./db:/docker-entrypoint-initdb.d # Auto-run migration scripts
     healthcheck:
       test: ["CMD-SHELL","pg_isready -U ${POSTGRES_USER:-ni} -d ${POSTGRES_DB:-ni}"]
       interval: 10s
