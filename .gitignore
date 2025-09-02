@@ -15,3 +15,13 @@ dist/
 # Docker
 *.log
 docker-compose.override.yml
+
+# Database
+db/data/
+
+# Data files
+data/raw/*.zip
+data/raw/*.pbf  
+data/raw/*.csv
+data/raw/*.json
+data/processed/
