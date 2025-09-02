@@ -25,3 +25,7 @@ data/raw/*.pbf
 data/raw/*.csv
 data/raw/*.json
 data/processed/
+
+# Vector tiles
+tiles/*.mbtiles
+tiles/*.geojson

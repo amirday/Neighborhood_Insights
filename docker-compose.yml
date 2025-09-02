@@ -1,17 +1,42 @@
 services:
   postgres:
-    image: postgis/postgis:15-3.4
-    container_name: ni_postgres
-    ports:
-      - "5432:5432"
+    image: postgis/postgis:16-3.4
+    container_name: ni-postgres
     environment:
-      POSTGRES_USER: ni_user
-      POSTGRES_PASSWORD: ni_pass
-      POSTGRES_DB: ni_db
+      POSTGRES_USER: ${POSTGRES_USER:-ni}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ni_password}
+      POSTGRES_DB: ${POSTGRES_DB:-ni}
+    ports: ["5432:5432"]
     volumes:
-      - ./db/data:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U ${POSTGRES_USER:-ni} -d ${POSTGRES_DB:-ni}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   redis:
     image: redis:7
-    container_name: ni_redis
-    ports:
-      - "6379:6379"
+    container_name: ni-redis
+    ports: ["6379:6379"]
+
+  api:
+    build: ./api
+    container_name: ni-api
+    env_file: [.env]
+    depends_on:
+      postgres: { condition: service_healthy }
+    ports: ["8000:8000"]
+    volumes:
+      - ./api:/app
+
+  tiles:
+    image: klokantech/tileserver-gl
+    container_name: ni-tiles
+    volumes:
+      - ./tiles:/data
+    ports: ["8080:80"]
+    command: ["--verbose","--public_url","/","/data"]
+
+volumes:
+  pgdata:
