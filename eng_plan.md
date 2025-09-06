@@ -263,6 +263,144 @@ npm install @next/pwa workbox-webpack-plugin
 - Performance optimized for mobile browsers
 - Basic neighborhood data visible on interaction
 
+**Implementation Details**:
+- Data source: use a local GeoJSON in `app/public/data/neighborhoods.sample.geojson` for Day 9. Replace with API/vector tiles on Day 10.
+- Map style: `mapbox://styles/mapbox/light-v11` with a fill + outline layer for neighborhoods.
+- Interactions: feature-state driven hover highlight; click/touch popup with RTL content.
+- Performance: promote feature IDs, avoid layer re-creation, and limit paints for mobile.
+
+**Files To Add/Change**:
+- `app/public/data/neighborhoods.sample.geojson`: minimal sample of neighborhood polygons with properties.
+- `app/src/components/Map.tsx`: add source, layers, and interaction handlers.
+
+**Sample GeoJSON (placeholder)**:
+```json
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": 1,
+      "properties": {
+        "name_he": "שכונה לדוגמה",
+        "name_en": "Sample Neighborhood",
+        "population": 12345
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [35.19, 31.77], [35.21, 31.77], [35.21, 31.78], [35.19, 31.78], [35.19, 31.77]
+          ]
+        ]
+      }
+    }
+  ]
+}
+```
+
+**Map Integration (pseudo-diff)**:
+```ts
+// app/src/components/Map.tsx
+// Inside map.current.on('load', () => { ... })
+
+// 1) Add neighborhoods source (using local GeoJSON for Day 9)
+map.current.addSource('neighborhoods', {
+  type: 'geojson',
+  data: '/data/neighborhoods.sample.geojson',
+  promoteId: 'id',
+});
+
+// 2) Add fill layer
+map.current.addLayer({
+  id: 'hood-fill',
+  type: 'fill',
+  source: 'neighborhoods',
+  paint: {
+    'fill-color': [
+      'case',
+      ['boolean', ['feature-state', 'hover'], false], '#2563EB', '#60A5FA'
+    ],
+    'fill-opacity': [
+      'case',
+      ['boolean', ['feature-state', 'hover'], false], 0.35, 0.20
+    ],
+  },
+});
+
+// 3) Add outline layer
+map.current.addLayer({
+  id: 'hood-outline',
+  type: 'line',
+  source: 'neighborhoods',
+  paint: {
+    'line-color': '#1E3A8A',
+    'line-width': [
+      'interpolate', ['linear'], ['zoom'],
+      7, 0.5,
+      12, 1.25,
+      15, 2
+    ],
+    'line-opacity': 0.7,
+  },
+});
+
+// 4) Hover highlight using feature-state
+let hoveredId: number | string | null = null;
+map.current.on('mousemove', 'hood-fill', (e) => {
+  map.current!.getCanvas().style.cursor = 'pointer';
+  const f = e.features?.[0];
+  if (!f) return;
+  const id = (f.id as number | string) ?? f.properties?.id;
+  if (hoveredId !== null && hoveredId !== id) {
+    map.current!.setFeatureState({ source: 'neighborhoods', id: hoveredId }, { hover: false });
+  }
+  hoveredId = id;
+  map.current!.setFeatureState({ source: 'neighborhoods', id }, { hover: true });
+});
+map.current.on('mouseleave', 'hood-fill', () => {
+  map.current!.getCanvas().style.cursor = '';
+  if (hoveredId !== null) {
+    map.current!.setFeatureState({ source: 'neighborhoods', id: hoveredId }, { hover: false });
+  }
+  hoveredId = null;
+});
+
+// 5) Click/touch popup
+const openPopup = (lngLat: mapboxgl.LngLatLike, props: any) => {
+  new mapboxgl.Popup({ offset: 10, closeButton: true })
+    .setLngLat(lngLat)
+    .setHTML(
+      `<div dir="rtl" class="p-2">
+         <h3 class="font-semibold">${props.name_he ?? props.name_en ?? 'שכונה'}</h3>
+         ${props.population ? `<p>אוכלוסייה: ${props.population.toLocaleString()}</p>` : ''}
+       </div>`
+    )
+    .addTo(map.current!);
+};
+map.current.on('click', 'hood-fill', (e) => {
+  const f = e.features?.[0];
+  if (f) openPopup(e.lngLat, f.properties);
+});
+map.current.on('touchend', 'hood-fill', (e) => {
+  const f = e.features?.[0];
+  if (f) openPopup((e as any).lngLat, f.properties);
+});
+```
+
+**Mobile Optimization Notes**:
+- Use `feature-state` for hover to avoid re-style churn; maintain a single hovered feature.
+- Limit paint complexity; avoid expensive expressions and high opacities.
+- Ensure `maxBounds` is set (already configured) and keep default zoom levels sensible.
+- Defer popups on rapid touchmove; prefer `touchend` to reduce accidental taps.
+
+**Validation Checklist**:
+- Neighborhood polygons render with subtle fill and clear outlines.
+- Hover changes fill color/opacity; cursor changes to pointer.
+- Click or touch opens RTL popup with name and population.
+- Navigation control present; pan/zoom feels smooth on mobile.
+- No repeated layer creation or console errors on re-render.
+
 ---
 
 ## Day 10: Database Enhancement & API Connection

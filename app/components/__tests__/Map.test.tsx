@@ -11,6 +11,10 @@ jest.mock('mapbox-gl', () => ({
       }
     }),
     remove: jest.fn(),
+    addSource: jest.fn(),
+    addLayer: jest.fn(),
+    getCanvas: jest.fn(() => ({ style: {} })),
+    setFeatureState: jest.fn(),
   })),
   NavigationControl: jest.fn(),
   AttributionControl: jest.fn(),
@@ -23,9 +27,9 @@ jest.mock('mapbox-gl', () => ({
     })),
   })),
   Popup: jest.fn(() => ({
-    setHTML: jest.fn(() => ({
-      setOffset: jest.fn(),
-    })),
+    setHTML: jest.fn(function () { return this }),
+    setLngLat: jest.fn(function () { return this }),
+    addTo: jest.fn(),
   })),
   accessToken: '',
 }))
@@ -81,5 +85,22 @@ describe('Map Component', () => {
     
     const mapContainer = screen.getByTestId('mapbox-container')
     expect(mapContainer).toHaveClass('w-full', 'h-full')
+  })
+
+  it('adds neighborhoods source and layers on load', async () => {
+    process.env.NEXT_PUBLIC_MAPBOX_TOKEN = 'pk.test.token'
+
+    render(<Map />)
+
+    const mapboxgl = jest.requireMock('mapbox-gl') as any
+    // Allow microtask to run the deferred 'load' callback
+    await new Promise((r) => setTimeout(r, 0))
+
+    const mapInstance = mapboxgl.Map.mock.results[0].value
+    expect(mapInstance.addSource).toHaveBeenCalledWith(
+      'neighborhoods',
+      expect.objectContaining({ type: 'geojson' })
+    )
+    expect(mapInstance.addLayer).toHaveBeenCalled()
   })
 })

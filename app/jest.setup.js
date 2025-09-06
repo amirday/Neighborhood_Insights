@@ -1,29 +1,38 @@
 import '@testing-library/jest-dom'
 
 // Mock mapbox-gl
-jest.mock('mapbox-gl', () => ({
-  Map: jest.fn(() => ({
+jest.mock('mapbox-gl', () => {
+  const mapInstance = {
     addControl: jest.fn(),
     on: jest.fn(),
     remove: jest.fn(),
-  })),
-  NavigationControl: jest.fn(),
-  AttributionControl: jest.fn(),
-  Marker: jest.fn(() => ({
-    setLngLat: jest.fn(() => ({
-      setPopup: jest.fn(() => ({
+    addSource: jest.fn(),
+    addLayer: jest.fn(),
+    getCanvas: jest.fn(() => ({ style: {} })),
+    setFeatureState: jest.fn(),
+  };
+  return {
+    Map: jest.fn(() => mapInstance),
+    NavigationControl: jest.fn(),
+    AttributionControl: jest.fn(),
+    Marker: jest.fn(() => ({
+      setLngLat: jest.fn(() => ({
+        setPopup: jest.fn(() => ({
+          addTo: jest.fn(),
+        })),
         addTo: jest.fn(),
       })),
+    })),
+    Popup: jest.fn(() => ({
+      setHTML: jest.fn(() => ({
+        setOffset: jest.fn(),
+      })),
+      setLngLat: jest.fn(function () { return this; }),
       addTo: jest.fn(),
     })),
-  })),
-  Popup: jest.fn(() => ({
-    setHTML: jest.fn(() => ({
-      setOffset: jest.fn(),
-    })),
-  })),
-  accessToken: '',
-}))
+    accessToken: '',
+  };
+})
 
 // Mock next/dynamic
 jest.mock('next/dynamic', () => (fn) => {

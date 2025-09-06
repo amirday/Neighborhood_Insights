@@ -38,7 +38,11 @@ reset-db:
 .PHONY: etl-cbs-sa etl-all
 
 etl-cbs-sa:
-	cd etl && poetry run python cbs_processor.py ../data/raw/cbs_statistical_areas.zip
+	cd etl && poetry run python cbs_regions_loader.py --path ../data/raw/statistical_areas_2022/statistical_areas_2022.shp
+
+.PHONY: etl-regions
+etl-regions:
+	cd etl && poetry run python cbs_regions_loader.py --path ../data/raw/statistical_areas_2022/statistical_areas_2022.shp
 
 etl-all:
 	cd etl && poetry run python -m etl.pipeline
@@ -47,10 +51,10 @@ etl-all:
 .PHONY: api api-dev api-test
 
 api:
-	cd api && poetry run uvicorn api.main:app --host 0.0.0.0 --port 8000
+	cd api && poetry run uvicorn main:app --host 0.0.0.0 --port 8000
 
 api-dev:
-	cd api && poetry run uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+	cd api && poetry run uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 api-test:
 	cd api && poetry run pytest tests/ -v
