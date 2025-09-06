@@ -3,20 +3,20 @@
 
 ### Phase 1: Foundation (Days 1-10)
 
-## Day 1: Environment Setup & Accounts
-**Objective**: Complete development environment and third-party accounts
+## ~~Day 1: Environment Setup & Accounts~~
+~~**Objective**: Complete development environment and third-party accounts~~
 
-**Tasks**:
-- [ ] Install development tooling (Python, Node, Docker, PostGIS tools)
-- [ ] Create all external service accounts
-- [ ] Configure API keys and quotas
-- [ ] Set up monitoring/alerting for cost controls
+~~**Tasks**:~~
+- ~~[x] Install development tooling (Python, Node, Docker, PostGIS tools)~~
+- ~~[ ] Create all external service accounts~~
+- ~~[x] Configure API keys and quotas~~
+- ~~[ ] Set up monitoring/alerting for cost *controls*~~
 
-**Acceptance Criteria**:
-- All tools installed and version-locked
-- API keys stored securely in `.env` 
-- Budget alerts configured (Google: $50/mo, Mapbox: 50k loads/mo)
-- Local development environment fully functional
+~~**Acceptance Criteria**:~~
+- ~~All tools installed and version-locked~~
+- ~~API keys stored securely in `.env`~~ 
+- ~~[ ] Budget alerts configured (Google: $50/mo, Mapbox: 50k loads/mo)~~
+- ~~Local development environment fully functional~~
 
 **External Services Setup**:
 ```bash
@@ -45,19 +45,19 @@ docker-compose up -d postgres
 
 ---
 
-## Day 2: Monorepo Structure & CI/CD
-**Objective**: Complete monorepo skeleton with working CI/CD
+## ~~Day 2: Monorepo Structure & CI/CD~~
+~~**Objective**: Complete monorepo skeleton with working CI/CD~~
 
-**Tasks**:
-- [ ] Finalize directory structure
-- [ ] Create Docker Compose configuration
-- [ ] Set up GitHub Actions workflows
-- [ ] Configure pre-commit hooks
+~~**Tasks**:~~
+- ~~[x] Finalize directory structure~~
+- ~~[x] Create Docker Compose configuration~~
+- ~~[ ] Set up GitHub Actions workflows~~
+- ~~[x] Configure pre-commit hooks~~
 
-**Acceptance Criteria**:
-- `make up` starts all local services
-- GitHub Actions running lint/test/build on push
-- Pre-commit hooks enforcing code quality
+~~**Acceptance Criteria**:~~
+- ~~[x] `make up` starts all local services~~
+- ~~[ ] GitHub Actions running lint/test/build on push~~
+- ~~[x] Pre-commit hooks enforcing code quality~~
 
 **Files Created**:
 ```
@@ -74,20 +74,20 @@ Makefile                     # Common commands
 
 ---
 
-## Day 3: Database Schema & PostGIS Setup
-**Objective**: Production-ready database schema with spatial indices
+## ~~Day 3: Database Schema & PostGIS Setup~~
+~~**Objective**: Production-ready database schema with spatial indices~~
 
-**Tasks**:
-- [ ] Create comprehensive PostGIS schema
-- [ ] Add spatial indices and constraints
-- [ ] Create database migration system
-- [ ] Set up connection pooling
+~~**Tasks**:~~
+- ~~[x] Create comprehensive PostGIS schema~~
+- ~~[x] Add spatial indices and constraints~~
+- ~~[x] Create database migration system~~
+- ~~[x] Set up connection pooling~~
 
-**Acceptance Criteria**:
-- PostGIS extension enabled
-- All tables created with proper indices
-- Migration system functional
-- Connection pooling configured
+~~**Acceptance Criteria**:~~
+- ~~[x] PostGIS extension enabled~~
+- ~~[x] All tables created with proper indices~~
+- ~~[x] Migration system functional~~
+- ~~[x] Connection pooling configured~~
 
 **Schema Components**:
 ```sql
@@ -109,23 +109,23 @@ Makefile                     # Common commands
 
 ---
 
-## Day 4: Data Acquisition Pipeline
-**Objective**: Automated data collection from all primary sources
+## ~~Day 4: Data Acquisition Pipeline~~
+~~**Objective**: Automated data collection from all primary sources~~
 
-**Tasks**:
-- [ ] CBS Statistical Areas download/processing
-- [ ] Ministry of Education data collection
-- [ ] Israel Police crime data integration
-- [ ] Ministry of Health facilities data
-- [ ] OSM Israel extract processing
-- [ ] GTFS Israel integration
-- [ ] Tax Authority real estate data setup
+~~**Tasks**:~~
+- ~~[x] CBS Statistical Areas download/processing~~
+- ~~[x] Ministry of Education data collection~~
+- ~~[x] Israel Police crime data integration~~
+- ~~[x] Ministry of Health facilities data~~
+- ~~[x] OSM Israel extract processing~~
+- ~~[x] GTFS Israel integration~~
+- ~~[x] Tax Authority real estate data setup~~
 
-**Acceptance Criteria**:
-- All raw data sources identified and accessible
-- Download scripts with checksums/validation
-- Data provenance documentation
-- Automated refresh capability
+~~**Acceptance Criteria**:~~
+- ~~[x] All raw data sources identified and accessible~~
+- ~~[x] Download scripts with checksums/validation~~
+- ~~[x] Data provenance documentation~~
+- ~~[x] Automated refresh capability~~
 
 **Data Sources**:
 ```
@@ -140,21 +140,21 @@ Tax Authority: Real estate transactions (Nadlan)
 
 ---
 
-## Day 5: CBS Statistical Areas ETL
-**Objective**: Core geographic boundaries loaded and validated
+## ~~Day 5: CBS Statistical Areas ETL~~
+~~**Objective**: Core geographic boundaries loaded and validated~~
 
-**Tasks**:
-- [ ] ETL pipeline for CBS statistical areas
-- [ ] Geometry validation and cleanup  
-- [ ] CRS transformation (ITM→WGS84)
-- [ ] Centroid generation
-- [ ] Quality assurance checks
+~~**Tasks**:~~
+- ~~[x] ETL pipeline for CBS statistical areas~~
+- ~~[x] Geometry validation and cleanup~~  
+- ~~[x] CRS transformation (ITM→WGS84)~~
+- ~~[x] Centroid generation~~
+- ~~[x] Quality assurance checks~~
 
-**Acceptance Criteria**:
-- ~4,500 statistical areas loaded
-- Geometries validated (no invalid/empty)
-- Centroids computed for all regions
-- Spatial queries performing <100ms
+~~**Acceptance Criteria**:~~
+- ~~[x] ~4,500 statistical areas loaded~~
+- ~~[x] Geometries validated (no invalid/empty)~~
+- ~~[x] Centroids computed for all regions~~
+- ~~[x] Spatial queries performing <100ms~~
 
 **ETL Pipeline**:
 ```python
@@ -169,21 +169,21 @@ Tax Authority: Real estate transactions (Nadlan)
 
 ---
 
-## Day 6: Demographics & Education Data Processing  
-**Objective**: Population and school data integrated with geography
+## ~~Day 6: Demographics & Education Data Processing~~  
+~~**Objective**: Population and school data integrated with geography~~
 
-**Tasks**:
-- [ ] CBS demographic data processing
-- [ ] School locations geocoding/validation
-- [ ] Mitzav/RAMA test scores integration
-- [ ] Spatial joins with statistical areas
-- [ ] Data quality validation
+~~**Tasks**:~~
+- ~~[x] CBS demographic data processing~~
+- ~~[x] School locations geocoding/validation~~
+- ~~[x] Mitzav/RAMA test scores integration~~
+- ~~[x] Spatial joins with statistical areas~~
+- ~~[x] Data quality validation~~
 
-**Acceptance Criteria**:
-- Demographics loaded for all regions
-- Schools geocoded with <5% failure rate
-- Test scores linked to school records
-- Education quality metrics computed
+~~**Acceptance Criteria**:~~
+- ~~[x] Demographics loaded for all regions~~
+- ~~[x] Schools geocoded with <5% failure rate~~
+- ~~[x] Test scores linked to school records~~
+- ~~[x] Education quality metrics computed~~
 
 **Processing Steps**:
 ```python
@@ -201,75 +201,86 @@ Tax Authority: Real estate transactions (Nadlan)
 
 ---
 
-## Day 7: Crime & Health Data Integration
-**Objective**: Safety and healthcare accessibility data layers
+## ~~Day 7: Crime & Health Data Integration~~
+~~**Objective**: Safety and healthcare accessibility data layers~~
 
-**Tasks**:
-- [ ] Police crime data normalization
-- [ ] Crime rate calculations (per 1000 residents)
-- [ ] Health facility location processing
-- [ ] Healthcare accessibility metrics
-- [ ] Data validation and outlier detection
+~~**Tasks**:~~
+- ~~[x] Police crime data normalization~~
+- ~~[x] Crime rate calculations (per 1000 residents)~~
+- ~~[x] Health facility location processing~~
+- ~~[x] Healthcare accessibility metrics~~
+- ~~[x] Data validation and outlier detection~~
 
-**Acceptance Criteria**:
-- Crime rates normalized across regions
-- Health facilities geocoded and categorized
-- Accessibility scores computed
-- Outliers identified and flagged
-
----
-
-## Day 8: OSM POI Processing & GTFS Integration
-**Objective**: Services accessibility and transit connectivity data
-
-**Tasks**:
-- [ ] OSM POI extraction and categorization
-- [ ] Transit stop processing from GTFS
-- [ ] Service proximity calculations
-- [ ] Transit accessibility scoring
-- [ ] Data deduplication and validation
-
-**Acceptance Criteria**:
-- Key POI categories extracted (supermarkets, clinics, parks)
-- Transit stops loaded with route information
-- Proximity metrics computed (300m/500m/800m/1000m buffers)
-- Service accessibility scores calculated
+~~**Acceptance Criteria**:~~
+- ~~[x] Crime rates normalized across regions~~
+- ~~[x] Health facilities geocoded and categorized~~
+- ~~[x] Accessibility scores computed~~
+- ~~[x] Outliers identified and flagged~~
 
 ---
 
-## Day 9: Real Estate Data Processing
-**Objective**: Housing market data integration and price trending
+## Day 8: Next.js Frontend Foundation
+**Objective**: Basic UI with interactive map functionality
 
 **Tasks**:
-- [ ] Tax Authority transaction data processing
-- [ ] Price normalization and validation
-- [ ] Geocoding of transaction addresses
-- [ ] Price trend analysis by region
-- [ ] Housing affordability metrics
+- [ ] Next.js 14 project initialization in `/app` directory
+- [ ] PWA configuration (service worker, manifest)
+- [ ] Basic routing structure setup
+- [ ] Mapbox GL integration with simple map view
+- [ ] Mobile-first responsive layout
 
 **Acceptance Criteria**:
-- Transaction data cleaned and geocoded
-- Price per sqm calculated by region
-- Trend analysis (6mo/12mo/24mo)
-- Affordability indices computed
+- Next.js app running on localhost:3000
+- Basic map displays Israeli boundaries
+- Mobile-responsive design foundation
+- PWA manifest configured
+- Clean, minimal UI structure
+
+**Setup Commands**:
+```bash
+cd app/
+npx create-next-app@14 . --typescript --tailwind --eslint --app --src-dir
+npm install mapbox-gl @types/mapbox-gl
+npm install @next/pwa workbox-webpack-plugin
+```
 
 ---
 
-## Day 10: Scoring Algorithm Implementation
-**Objective**: Multi-component neighborhood scoring system
+## Day 9: Map Integration & Basic Interactivity  
+**Objective**: Interactive map with neighborhood boundaries
 
 **Tasks**:
-- [ ] Component score calculation (education, crime, services, transit, housing)
-- [ ] Z-score normalization across regions
-- [ ] Weighted composite scoring (0-100 scale)
-- [ ] Score validation and calibration
-- [ ] Performance optimization
+- [ ] Load neighborhood boundaries as vector data
+- [ ] Implement map click/hover interactions
+- [ ] Add basic zoom and pan controls
+- [ ] Create simple neighborhood info popup
+- [ ] Mobile touch optimization
 
 **Acceptance Criteria**:
-- All regions have complete component scores
-- Composite scores distributed appropriately (normal distribution)
-- Scoring queries execute <200ms
-- Score accuracy validated against known neighborhoods
+- Map displays neighborhood boundaries clearly
+- Click on neighborhood shows basic info
+- Smooth pan/zoom on mobile devices
+- Performance optimized for mobile browsers
+- Basic neighborhood data visible on interaction
+
+---
+
+## Day 10: Database Enhancement & API Connection
+**Objective**: Enhanced database with basic API endpoints
+
+**Tasks**:
+- [ ] Add missing data tables (scores, enhanced demographics)
+- [ ] Create basic FastAPI endpoints for map data
+- [ ] Implement neighborhood data retrieval
+- [ ] Add basic search functionality
+- [ ] Connect frontend to API endpoints
+
+**Acceptance Criteria**:
+- Database has all essential tables populated
+- API serves neighborhood boundary data
+- Frontend successfully fetches data from API
+- Basic search returns neighborhood results
+- Error handling for API failures
 
 **Scoring Formula**:
 ```python
@@ -287,23 +298,23 @@ composite_score = Σ(z_score_i * weight_i) * 10 + 50  # Scale to 0-100
 
 ---
 
-### Phase 2: Routing & Backend API (Days 11-20)
+### Phase 2: Data Processing & Advanced Features (Days 11-20)
 
-## Day 11: OSRM Setup (Car/Bike/Foot)
-**Objective**: Local routing engine for basic transport modes
+## Day 11: OSM POI Processing & GTFS Integration
+**Objective**: Services accessibility and transit connectivity data
 
 **Tasks**:
-- [ ] OSRM Docker container setup
-- [ ] Israel+Palestine OSM extract processing  
-- [ ] Car/bike/foot profile configuration
-- [ ] Route and matrix API testing
-- [ ] Performance benchmarking
+- [ ] OSM POI extraction and categorization
+- [ ] Transit stop processing from GTFS
+- [ ] Service proximity calculations
+- [ ] Transit accessibility scoring
+- [ ] Data deduplication and validation
 
 **Acceptance Criteria**:
-- OSRM answering route requests <500ms
-- Matrix calculations for 100x100 origins/destinations <2s
-- All transport profiles working correctly
-- Memory usage optimized (<2GB)
+- Key POI categories extracted (supermarkets, clinics, parks)
+- Transit stops loaded with route information
+- Proximity metrics computed (300m/500m/800m/1000m buffers)
+- Service accessibility scores calculated
 
 **Setup Commands**:
 ```bash
@@ -322,39 +333,56 @@ docker run -t -i -p 5000:5000 -v $(pwd):/data osrm/osrm-backend osrm-routed --al
 
 ---
 
-## Day 12: OpenTripPlanner Setup (Transit)
-**Objective**: Public transit routing with GTFS data
+## Day 12: Real Estate Data Processing
+**Objective**: Housing market data integration and price trending
 
 **Tasks**:
-- [ ] OTP2 installation and configuration
-- [ ] GTFS Israel data integration
-- [ ] Graph building with OSM + GTFS
-- [ ] Transit routing API testing
-- [ ] Isochrone generation validation
+- [ ] Tax Authority transaction data processing
+- [ ] Price normalization and validation
+- [ ] Geocoding of transaction addresses
+- [ ] Price trend analysis by region
+- [ ] Housing affordability metrics
 
 **Acceptance Criteria**:
-- OTP graph built successfully with GTFS+OSM
-- Transit routing working for major routes
-- Isochrone API functional
-- Performance acceptable for single queries
+- Transaction data cleaned and geocoded
+- Price per sqm calculated by region
+- Trend analysis (6mo/12mo/24mo)
+- Affordability indices computed
 
 ---
 
-## Day 13-14: Commute Calculation Engine
-**Objective**: Multi-stage routing funnel with cost optimization
+## Day 13: Scoring Algorithm Implementation
+**Objective**: Multi-component neighborhood scoring system
 
 **Tasks**:
-- [ ] Stage 0: Crow-flight prefilter implementation
-- [ ] Stage 1: OSRM batch processing integration
-- [ ] Stage 2: Google Routes API integration with caching
-- [ ] Traffic-aware routing for peak hours
-- [ ] Caching strategy (Redis) with TTL
+- [ ] Component score calculation (education, crime, services, transit, housing)
+- [ ] Z-score normalization across regions
+- [ ] Weighted composite scoring (0-100 scale)
+- [ ] Score validation and calibration
+- [ ] Performance optimization
 
 **Acceptance Criteria**:
-- Complete commute funnel operational
-- Google API costs controlled (<$2/day)
-- Cache hit rate >80% for repeated queries
-- Response times: Stage 1 <1s, Stage 2 <3s
+- All regions have complete component scores
+- Composite scores distributed appropriately (normal distribution)
+- Scoring queries execute <200ms
+- Score accuracy validated against known neighborhoods
+
+## Day 14: Advanced UI Components
+**Objective**: Enhanced user interface with filtering and search
+
+**Tasks**:
+- [ ] Address search autocomplete component
+- [ ] Neighborhood filter sidebar
+- [ ] Score visualization (charts/gauges)
+- [ ] Mobile bottom sheet UI patterns
+- [ ] Real-time map updates with filters
+
+**Acceptance Criteria**:
+- Search autocomplete working smoothly
+- Filters applied without page refresh
+- Score visualization clear and informative
+- Mobile-optimized UI components
+- Smooth interactions on touch devices
 
 **Routing Funnel Logic**:
 ```python
