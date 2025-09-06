@@ -1,0 +1,43 @@
+[tool.poetry]
+name = "neighborhood-insights-etl"
+version = "0.1.0"
+description = "ETL pipeline for Neighborhood Insights IL"
+authors = ["Your Name <your.email@example.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+geopandas = "^0.14.4"
+pyproj = "^3.6.1"
+shapely = "^2.0.4"
+psycopg = {extras = ["binary"], version = "^3.1.19"}
+pandas = "^2.2.2"
+fiona = "^1.9.6"
+requests = "^2.31.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+pytest-cov = "^4.1.0"
+pytest-mock = "^3.12.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "integration: integration tests requiring database or external services",
+    "unit: unit tests",
+]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "-ra",
+]
+
+[tool.coverage.run]
+source = ["etl"]
+omit = ["*/tests/*"]
