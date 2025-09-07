@@ -25,7 +25,7 @@ export default function Home() {
   useEffect(() => {
     const fetchPOIs = async () => {
       try {
-        const response = await fetch('http://localhost:8001/pois');
+        const response = await fetch('/api/pois');
         const data = await response.json();
         setPois(data.pois);
         setPOITypes(data.available_types);
@@ -51,7 +51,8 @@ export default function Home() {
         container: mapContainer.current,
         style: 'mapbox://styles/mapbox/streets-v12',
         center: [35.2, 31.5], // Center of Israel
-        zoom: 7
+        zoom: 7,
+        fadeDuration: 0,
       });
 
       // Add navigation control (zoom buttons)
@@ -83,22 +84,10 @@ export default function Home() {
         border-radius: 50%;
         cursor: pointer;
         box-shadow: 0 2px 8px rgba(0,0,0,0.25);
-        transition: all 0.2s ease;
         position: relative;
+        transition: none !important;
+        animation: none !important;
       `;
-      
-      // Add hover effect
-      el.addEventListener('mouseenter', () => {
-        el.style.transform = 'scale(1.3)';
-        el.style.zIndex = '1000';
-        el.style.boxShadow = '0 4px 12px rgba(0,0,0,0.35)';
-      });
-      
-      el.addEventListener('mouseleave', () => {
-        el.style.transform = 'scale(1)';
-        el.style.zIndex = 'auto';
-        el.style.boxShadow = '0 2px 8px rgba(0,0,0,0.25)';
-      });
 
       // Create enhanced popup
       const popup = new mapboxgl.Popup({ 
@@ -152,21 +141,21 @@ export default function Home() {
   return (
     <div className="h-screen w-full relative bg-gray-50">
       {/* Header */}
-      <div className="absolute top-0 left-0 right-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-200 shadow-sm">
+      <div className="absolute top-0 left-0 right-0 z-20 bg-white/95 border-b border-gray-200 shadow-sm">
         <div className="flex items-center justify-between px-6 py-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Neighborhood Insights</h1>
             <p className="text-sm text-gray-600">Explore Israel's Points of Interest</p>
           </div>
           <div className="flex items-center space-x-2 text-sm text-gray-500">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
             <span>Live Data</span>
           </div>
         </div>
       </div>
       
       {/* Filter Panel */}
-      <div className="absolute top-24 right-6 z-10 bg-white/95 backdrop-blur-sm p-6 rounded-xl shadow-lg border border-gray-200 min-w-64">
+      <div className="absolute top-24 right-6 z-10 bg-white/95 p-6 rounded-xl shadow-lg border border-gray-200 min-w-64">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
           <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
@@ -176,7 +165,7 @@ export default function Home() {
         
         {loading ? (
           <div className="flex items-center justify-center py-8">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+            <div className="rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
             <span className="ml-2 text-sm text-gray-600">Loading POIs...</span>
           </div>
         ) : (
@@ -194,7 +183,7 @@ export default function Home() {
                       onChange={() => handleTypeToggle(type)}
                       className="sr-only"
                     />
-                    <div className={`w-5 h-5 rounded border-2 transition-all duration-200 ${
+                    <div className={`w-5 h-5 rounded border-2 ${
                       isSelected 
                         ? 'bg-blue-600 border-blue-600' 
                         : 'border-gray-300 group-hover:border-blue-400'
@@ -233,13 +222,13 @@ export default function Home() {
           <div className="flex space-x-2">
             <button 
               onClick={() => setSelectedTypes(poiTypes)}
-              className="flex-1 text-xs py-2 px-3 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors"
+              className="flex-1 text-xs py-2 px-3 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100"
             >
               Show All
             </button>
             <button 
               onClick={() => setSelectedTypes([])}
-              className="flex-1 text-xs py-2 px-3 bg-gray-50 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+              className="flex-1 text-xs py-2 px-3 bg-gray-50 text-gray-700 rounded-lg hover:bg-gray-100"
             >
               Hide All
             </button>
