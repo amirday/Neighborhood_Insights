@@ -24,3 +24,18 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Disable all Mapbox GL related animations and transitions */
+.poi-marker,
+.mapboxgl-marker,
+.mapboxgl-popup,
+.mapboxgl-popup *,
+.mapboxgl-map,
+.mapboxgl-canvas,
+.mapboxgl-canvas-container,
+.mapboxgl-control-container,
+.mapboxgl-ctrl,
+.mapboxgl-ctrl * {
+  transition: none !important;
+  animation: none !important;
+}

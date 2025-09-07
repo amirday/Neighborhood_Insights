@@ -27,9 +27,21 @@ export default function Home() {
       try {
         const response = await fetch('/api/pois');
         const data = await response.json();
-        setPois(data.pois);
-        setPOITypes(data.available_types);
-        setSelectedTypes(data.available_types); // Show all types by default
+        // Coerce to numbers and hard-filter to Israel bounding box
+        const cleaned: POI[] = data.pois
+          .map((p: any) => ({
+            ...p,
+            longitude: Number(p.longitude),
+            latitude: Number(p.latitude),
+          }))
+          .filter((p: POI) =>
+            p.latitude >= 29.0 && p.latitude <= 33.8 &&
+            p.longitude >= 33.5 && p.longitude <= 36.5
+          );
+        setPois(cleaned);
+        const types = Array.from(new Set(cleaned.map((p: POI) => p.type)));
+        setPOITypes(types);
+        setSelectedTypes(types); // Show all types by default
         setLoading(false);
       } catch (error) {
         console.error('Error fetching POIs:', error);
@@ -53,6 +65,12 @@ export default function Home() {
         center: [35.2, 31.5], // Center of Israel
         zoom: 7,
         fadeDuration: 0,
+        projection: 'mercator',
+        renderWorldCopies: false,
+        maxBounds: [
+          [33.5, 29.0], // SW (lng, lat)
+          [36.5, 33.8], // NE (lng, lat)
+        ],
       });
 
       // Add navigation control (zoom buttons)
@@ -60,62 +78,75 @@ export default function Home() {
     }
   }, []);
 
-  // Add POI markers when data is loaded
+  // Render POIs as a circle layer (no DOM markers)
   useEffect(() => {
-    if (!map.current || !pois.length) return;
+    if (!map.current) return;
+    const currentMap = map.current;
+    if (!pois.length) {
+      // Clear if source exists
+      if (currentMap.getSource('pois')) {
+        (currentMap.getSource('pois') as mapboxgl.GeoJSONSource).setData({ type: 'FeatureCollection', features: [] });
+      }
+      return;
+    }
 
-    // Clear existing markers
-    const existingMarkers = document.querySelectorAll('.poi-marker');
-    existingMarkers.forEach(marker => marker.remove());
+    const filtered = pois.filter(p => selectedTypes.includes(p.type));
+    const fc: GeoJSON.FeatureCollection<GeoJSON.Point, any> = {
+      type: 'FeatureCollection',
+      features: filtered.map(p => ({
+        type: 'Feature',
+        properties: {
+          id: p.id,
+          name_he: p.name_he,
+          name_en: p.name_en,
+          type: p.type,
+        },
+        geometry: { type: 'Point', coordinates: [p.longitude, p.latitude] },
+      })),
+    };
 
-    // Filter POIs based on selected types
-    const filteredPois = pois.filter(poi => selectedTypes.includes(poi.type));
+    if (currentMap.getSource('pois')) {
+      (currentMap.getSource('pois') as mapboxgl.GeoJSONSource).setData(fc as any);
+    } else {
+      currentMap.addSource('pois', { type: 'geojson', data: fc });
 
-    // Add markers for each POI
-    filteredPois.forEach(poi => {
-      // Create a marker element with better styling
-      const el = document.createElement('div');
-      el.className = 'poi-marker';
-      el.style.cssText = `
-        width: 14px;
-        height: 14px;
-        background-color: ${getMarkerColor(poi.type)};
-        border: 3px solid white;
-        border-radius: 50%;
-        cursor: pointer;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.25);
-        position: relative;
-        transition: none !important;
-        animation: none !important;
-      `;
+      // Circle layer for points
+      currentMap.addLayer({
+        id: 'pois-circles',
+        type: 'circle',
+        source: 'pois',
+        paint: {
+          'circle-radius': 6,
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#ffffff',
+          'circle-color': [
+            'match', ['get', 'type'],
+            'schools', '#3B82F6',
+            'kindergartens', '#10B981',
+            'clinics', '#EF4444',
+            'bus_stops', '#F59E0B',
+            /* other */ '#6B7280'
+          ],
+        },
+      });
 
-      // Create enhanced popup
-      const popup = new mapboxgl.Popup({ 
-        offset: 15,
-        closeButton: false,
-        closeOnClick: true,
-        maxWidth: '280px'
-      }).setHTML(
-        `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 4px;">
-          <div style="display: flex; align-items: center; margin-bottom: 8px;">
-            <div style="width: 8px; height: 8px; background-color: ${getMarkerColor(poi.type)}; border-radius: 50%; margin-right: 8px; border: 1px solid white; box-shadow: 0 1px 2px rgba(0,0,0,0.1);"></div>
-            <span style="font-size: 11px; color: #6B7280; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;">${poi.type.replace('_', ' ')}</span>
-          </div>
-          <h3 style="margin: 0 0 4px 0; font-size: 14px; font-weight: 600; color: #1F2937; line-height: 1.2;">
-            ${poi.name_he}
-          </h3>
-          <p style="margin: 0; font-size: 12px; color: #6B7280; line-height: 1.3;">
-            ${poi.name_en}
-          </p>
-        </div>`
-      );
-
-      // Add marker to map
-      new mapboxgl.Marker(el)
-        .setLngLat([poi.longitude, poi.latitude])
-        .setPopup(popup)
-        .addTo(map.current!);
-    });
+      // Popup on click
+      currentMap.on('click', 'pois-circles', (e) => {
+        const f = e.features && e.features[0];
+        if (!f) return;
+        const props: any = f.properties || {};
+        new mapboxgl.Popup({ closeButton: false, offset: 10 })
+          .setLngLat((f.geometry as any).coordinates)
+          .setHTML(
+            `<div style="font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
+              <div style="font-size:11px;color:#6B7280;text-transform:uppercase">${String(props.type || '').replace('_',' ')}</div>
+              <div style="font-weight:600">${props.name_he || ''}</div>
+              <div style="font-size:12px;color:#6B7280">${props.name_en || ''}</div>
+            </div>`
+          )
+          .addTo(currentMap);
+      });
+    }
   }, [pois, selectedTypes]);
 
   // Get marker color based on POI type

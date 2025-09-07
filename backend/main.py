@@ -3,20 +3,23 @@ from fastapi.middleware.cors import CORSMiddleware
 import csv
 from pathlib import Path
 from typing import Optional
+from statistics import mean
 
 app = FastAPI(title="Neighborhood Insights API", version="1.0.0")
 
 # Enable CORS for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Next.js frontend
-    allow_credentials=True,
+    # In dev, allow all origins to avoid CORS headaches
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Path to CSV files
-DATA_PATH = Path("../data/raw")
+# Path to CSV files (resolve relative to this file so CWD doesn't matter)
+BASE_DIR = Path(__file__).resolve().parent
+DATA_PATH = (BASE_DIR.parent / "data" / "raw").resolve()
 
 def is_in_israel(lat: float, lon: float) -> bool:
     """Check if coordinates are roughly within Israel's boundaries"""
@@ -25,18 +28,14 @@ def is_in_israel(lat: float, lon: float) -> bool:
     # Longitude: 34.2°E to 35.9°E
     return (29.5 <= lat <= 33.3) and (34.2 <= lon <= 35.9)
 
-def normalize_coordinates_to_israel(lat: float, lon: float) -> tuple[float, float]:
-    """Normalize coordinates to fall within Israel's boundaries"""
-    # If coordinates are way off, place them in central Israel
-    if not (25 <= lat <= 40) or not (30 <= lon <= 40):
-        # Return coordinates near Jerusalem as default
-        return 31.7683 + (lat % 1) * 0.5, 35.2137 + (lon % 1) * 0.5
-    
-    # Constrain to Israel's boundaries
-    lat_normalized = max(29.5, min(33.3, lat))
-    lon_normalized = max(34.2, min(35.9, lon))
-    
-    return lat_normalized, lon_normalized
+def normalize_coordinates_to_israel(original_lat: float, original_lon: float, poi_id: int) -> tuple[float, float]:
+    """Return the original WGS84 coordinates without modification.
+
+    Previous versions perturbed coordinates to city centroids which caused
+    POIs to appear in incorrect locations on the map. Our CSVs already
+    contain WGS84 latitude/longitude, so no normalization is required.
+    """
+    return original_lat, original_lon
 
 def load_csv_data():
     """Load all CSV files and combine them into a single dataset"""
@@ -53,11 +52,10 @@ def load_csv_data():
                     if 'id' in row:
                         row['id'] = int(row['id'])
                     if 'latitude' in row and 'longitude' in row:
+                        # Ensure numeric types; keep true coordinates
                         lat = float(row['latitude'])
                         lon = float(row['longitude'])
-                        
-                        # Normalize coordinates to Israel
-                        lat_norm, lon_norm = normalize_coordinates_to_israel(lat, lon)
+                        lat_norm, lon_norm = normalize_coordinates_to_israel(lat, lon, row['id'])
                         row['latitude'] = lat_norm
                         row['longitude'] = lon_norm
                         
@@ -144,6 +142,27 @@ def get_poi_types():
         "types": types,
         "counts": type_counts,
         "total_types": len(types)
+    }
+
+@app.get("/debug/stats")
+def debug_stats():
+    """Return basic stats about loaded POIs to validate coordinates."""
+    if not pois_data:
+        return {"total": 0}
+
+    lats = [p["latitude"] for p in pois_data if isinstance(p.get("latitude"), (int, float))]
+    lons = [p["longitude"] for p in pois_data if isinstance(p.get("longitude"), (int, float))]
+    types = list(set(p.get("type") for p in pois_data))
+    return {
+        "total": len(pois_data),
+        "lat_min": min(lats),
+        "lat_max": max(lats),
+        "lat_mean": round(mean(lats), 6),
+        "lon_min": min(lons),
+        "lon_max": max(lons),
+        "lon_mean": round(mean(lons), 6),
+        "types": types[:10],
+        "sample": pois_data[:3],
     }
 
 if __name__ == "__main__":
