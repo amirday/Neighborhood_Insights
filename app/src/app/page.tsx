@@ -135,13 +135,24 @@ export default function Home() {
         const f = e.features && e.features[0];
         if (!f) return;
         const props: any = f.properties || {};
+        const coord = (f.geometry as any).coordinates;
         new mapboxgl.Popup({ closeButton: false, offset: 10 })
-          .setLngLat((f.geometry as any).coordinates)
+          .setLngLat(coord)
           .setHTML(
-            `<div style="font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
-              <div style="font-size:11px;color:#6B7280;text-transform:uppercase">${String(props.type || '').replace('_',' ')}</div>
-              <div style="font-weight:600">${props.name_he || ''}</div>
-              <div style="font-size:12px;color:#6B7280">${props.name_en || ''}</div>
+            `<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;min-width:220px">
+              <div style="display:flex;align-items:center;margin-bottom:6px">
+                <span style="font-size:10px;color:#6B7280;text-transform:uppercase;letter-spacing:.4px;background:#F3F4F6;padding:2px 6px;border-radius:999px">${String(props.type || '').replace('_',' ')}</span>
+              </div>
+              <div style="font-size:15px;font-weight:700;color:#111827;line-height:1.2;margin-bottom:2px">${props.name_he || ''}</div>
+              <div style="font-size:12px;color:#6B7280;margin-bottom:8px">${props.name_en || ''}</div>
+              <div style="display:flex;gap:8px">
+                <a href="/details/${props.id}" target="_blank" rel="noopener noreferrer"
+                   style="display:inline-block;font-size:12px;background:#2563EB;color:white;padding:6px 10px;border-radius:8px;text-decoration:none">פרטים</a>
+                <a href="https://www.google.com/maps?q=${coord[1]},${coord[0]}" target="_blank" rel="noopener noreferrer"
+                   style="display:inline-block;font-size:12px;background:#6B7280;color:white;padding:6px 10px;border-radius:8px;text-decoration:none">מפה</a>
+                <a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${coord[1]},${coord[0]}" target="_blank" rel="noopener noreferrer"
+                   style="display:inline-block;font-size:12px;background:#059669;color:white;padding:6px 10px;border-radius:8px;text-decoration:none">תצוגת רחוב</a>
+              </div>
             </div>`
           )
           .addTo(currentMap);

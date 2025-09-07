@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import csv
 from pathlib import Path
+import csv
+import re
 from typing import Optional
 from statistics import mean
 
@@ -17,9 +19,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Path to CSV files (resolve relative to this file so CWD doesn't matter)
+# Paths (resolve relative to this file so CWD doesn't matter)
 BASE_DIR = Path(__file__).resolve().parent
-DATA_PATH = (BASE_DIR.parent / "data" / "raw").resolve()
+RAW_PATH = (BASE_DIR.parent / "data" / "raw").resolve()
+PROCESSED_PATH = (BASE_DIR.parent / "data" / "processed").resolve()
 
 def is_in_israel(lat: float, lon: float) -> bool:
     """Check if coordinates are roughly within Israel's boundaries"""
@@ -37,36 +40,83 @@ def normalize_coordinates_to_israel(original_lat: float, original_lon: float, po
     """
     return original_lat, original_lon
 
-def load_csv_data():
-    """Load all CSV files and combine them into a single dataset"""
-    all_pois = []
-    
-    csv_files = list(DATA_PATH.glob("govmap_*.csv"))
-    
-    for csv_file in csv_files:
-        try:
-            with open(csv_file, 'r', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    # Convert numeric fields
-                    if 'id' in row:
-                        row['id'] = int(row['id'])
-                    if 'latitude' in row and 'longitude' in row:
-                        # Ensure numeric types; keep true coordinates
-                        lat = float(row['latitude'])
-                        lon = float(row['longitude'])
-                        lat_norm, lon_norm = normalize_coordinates_to_israel(lat, lon, row['id'])
-                        row['latitude'] = lat_norm
-                        row['longitude'] = lon_norm
-                        
-                    all_pois.append(row)
-        except Exception as e:
-            print(f"Error loading {csv_file}: {e}")
-    
-    return all_pois
+def _safe_float(value: str) -> float | None:
+    try:
+        v = float(value)
+        if v != v:  # NaN
+            return None
+        return v
+    except Exception:
+        return None
 
-# Load data on startup
-pois_data = load_csv_data()
+def load_mosdot_data():
+    """Load POIs from the processed mosdot.csv only.
+
+    Expected columns include at least: 'lon', 'lat', and Hebrew name fields.
+    We coerce lon/lat to floats and skip rows without valid coordinates.
+    """
+    mosdot_file = PROCESSED_PATH / "mosdot.csv"
+    pois: list[dict] = []
+    if not mosdot_file.exists():
+        print(f"mosdot.csv not found at {mosdot_file}")
+        return pois
+
+    try:
+        # utf-8-sig to strip potential BOM
+        with open(mosdot_file, "r", encoding="utf-8-sig", newline="") as f:
+            reader = csv.DictReader(f)
+            for idx, row in enumerate(reader, start=1):
+                lon = _safe_float(row.get("lon", ""))
+                lat = _safe_float(row.get("lat", ""))
+                if lon is None or lat is None:
+                    continue
+
+                # Filter to Israel-ish bounding box to avoid geocode outliers
+                if not (29.0 <= lat <= 33.8 and 33.5 <= lon <= 36.5):
+                    continue
+
+                name_field = row.get("שם וסמל מוסד") or row.get("שם מוסד") or ""
+                # Try to split code from name if formatted like "1234 Name"
+                code_match = None
+                if isinstance(name_field, str):
+                    code_match = __import__('re').match(r"^(\d{2,6})\s+(.+)$", name_field.strip()) if name_field else None
+                if code_match:
+                    symbol_code = code_match.group(1)
+                    name_he = code_match.group(2)
+                else:
+                    symbol_code = ""
+                    name_he = name_field or row.get("כתובת") or "מוסד חינוך"
+                name_en = row.get("יישוב") or row.get("כתובת למכתבים") or "Mosdot"
+                frame_type = row.get("סוג מסגרת") or row.get("שלב חינוך") or "mosdot"
+                address_line = row.get("כתובת") or ""
+                city = row.get("יישוב") or ""
+                address = ", ".join([part for part in [address_line, city] if part])
+
+                # Derive a compact english-ish type key for filtering
+                type_key = "mosdot"
+                if isinstance(frame_type, str):
+                    if "גן" in frame_type:
+                        type_key = "kindergartens"
+                    elif any(x in frame_type for x in ["בית ספר", "יסודי", "חטיבת", "תיכון"]):
+                        type_key = "schools"
+
+                pois.append({
+                    "id": idx,
+                    "name_he": name_he,
+                    "name_en": str(name_en),
+                    "type": type_key,
+                    "longitude": lon,
+                    "latitude": lat,
+                    "address": address,
+                    "symbol": symbol_code,
+                })
+    except Exception as e:
+        print(f"Error loading mosdot.csv: {e}")
+
+    return pois
+
+# Load data on startup (mosdot only)
+pois_data = load_mosdot_data()
 
 @app.get("/")
 def read_root():
