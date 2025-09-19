@@ -279,19 +279,29 @@ def main():
         pbar.set_description(f"Geocoding: {current_address[:50][::-1]}... ({processed_count}/{total_to_geocode})")
 
         lon, lat, err, fixed_addr = client.geocode_with_fallback(street=street, city=city, country=args.country)
-        if err:
-            print(f"Row {idx}: Geocode error '{err}' for '{street[::-1]}, {city[::-1]}'")
-            df_out.at[idx, "geocode_error"] = err
-            if fixed_addr:
-                df_out.at[idx, "fixed_address"] = fixed_addr
-            pbar.update(1)
-            continue
 
-        sub = df_out["__address_key"] == row["__address_key"]
-        df_out.loc[sub, "lon"] = lon
-        df_out.loc[sub, "lat"] = lat
-        df_out.loc[sub, "fixed_address"] = fixed_addr
-        pbar.update(sub.sum())
+        # Always store the error if present
+        if err:
+            df_out.at[idx, "geocode_error"] = err
+            print(f"Row {idx}: Geocode error '{err}' for '{street[::-1]}, {city[::-1]}'")
+
+        # Store fixed address if available
+        if fixed_addr:
+            df_out.at[idx, "fixed_address"] = fixed_addr
+
+        # If we have coordinates (even with error like "street_not_found"), store them
+        if lon is not None and lat is not None:
+            sub = df_out["__address_key"] == row["__address_key"]
+            df_out.loc[sub, "lon"] = lon
+            df_out.loc[sub, "lat"] = lat
+            if fixed_addr:
+                df_out.loc[sub, "fixed_address"] = fixed_addr
+            if err:
+                df_out.loc[sub, "geocode_error"] = err
+            pbar.update(sub.sum())
+        else:
+            # No coordinates found
+            pbar.update(1)
 
         if updates_count >= args.checkpoint_every:
             atomic_write_csv(df_out, args.out)
