@@ -61,27 +61,26 @@ def load_mosdot_data():
         print(f"mosdot.csv not found at {mosdot_file}")
         return pois
 
+    # Counters for debugging
+    total_rows = 0
+    no_coords_count = 0
+    out_of_bounds_count = 0
+
     try:
         # utf-8-sig to strip potential BOM
         with open(mosdot_file, "r", encoding="utf-8-sig", newline="") as f:
             reader = csv.DictReader(f)
-            # Debug: print headers on first read
-            if len(pois) == 0:
-                print("CSV Headers:", reader.fieldnames)
-                print("Looking for 'lon' and 'lat' columns")
             for idx, row in enumerate(reader, start=1):
+                total_rows += 1
                 lon = _safe_float(row.get("lon", ""))
                 lat = _safe_float(row.get("lat", ""))
-                # Debug: print first few rows to see what we're getting
-                if idx <= 3:
-                    print(f"Row {idx}: lon='{row.get('lon', 'MISSING')}', lat='{row.get('lat', 'MISSING')}'")
-                    available_coords = {k: v for k, v in row.items() if any(coord in k.lower() for coord in ['lon', 'lat', 'coordinate', 'x', 'y'])}
-                    print(f"Available coordinate-like columns: {available_coords}")
                 if lon is None or lat is None:
+                    no_coords_count += 1
                     continue
 
                 # Filter to Israel-ish bounding box to avoid geocode outliers
                 if not (29.0 <= lat <= 33.8 and 34.2 <= lon <= 35.9):
+                    out_of_bounds_count += 1
                     continue
 
                 name_field = row.get("שם וסמל מוסד") or row.get("שם מוסד") or ""
@@ -121,6 +120,13 @@ def load_mosdot_data():
                 })
     except Exception as e:
         print(f"Error loading mosdot.csv: {e}")
+
+    print(f"DATA LOADING SUMMARY:")
+    print(f"  Total rows processed: {total_rows}")
+    print(f"  Rows without coordinates: {no_coords_count}")
+    print(f"  Rows outside bounds: {out_of_bounds_count}")
+    print(f"  POIs loaded: {len(pois)}")
+    print(f"  Success rate: {len(pois)/total_rows*100:.1f}%")
 
     return pois
 

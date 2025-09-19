@@ -134,7 +134,7 @@ def main():
                     help="Input XLSX file path")
     ap.add_argument("--sheet", default='Sheet1', help="Optional sheet name (defaults to first)")
     ap.add_argument("--out",  
-                    default="/Users/amirdaygmail.com/projects/Neighborhood_Insights/data/processed/mosdot.csv", 
+                    default="/Users/amirdaygmail.com/projects/Neighborhood_Insights/data/processed/mosdot_4.csv", 
                     help="Output CSV path (also used as cache on re-runs)")
     ap.add_argument("--sleep", type=float, default=1.1, help="Seconds between requests (>=1.0 for public Nominatim)")
     ap.add_argument("--country", default="Israel", help="Country appended to the address key")
@@ -156,32 +156,6 @@ def main():
     # If cache CSV exists, load it; ensure all columns from input exist
     if os.path.exists(args.out):
         df_out = pd.read_csv(args.out, dtype=str, encoding="utf-8-sig")
-        # Preserve dtypes but we’ll coerce lon/lat later
-        # Make sure all input columns exist in df_out; if not, align/merge
-        for col in df_in.columns:
-            if col not in df_out.columns:
-                df_out[col] = df_in[col]
-        # Also ensure any extra cols in cache remain
-        # Align row count: merge by a stable key if available; otherwise fallback to position
-        # Best effort: If 'כתובת'+'יישוב' exists, merge on them
-        if all(c in df_out.columns for c in required_cols):
-            # merge to keep existing lon/lat
-            df_out = pd.merge(
-                df_in,
-                df_out[[*required_cols, "lon", "lat", "geocode_error"]] if all(
-                    c in df_out.columns for c in ["lon", "lat", "geocode_error"]
-                ) else df_out[required_cols],
-                on=required_cols,
-                how="left",
-            )
-        else:
-            # Fallback: take input and keep lon/lat if present by position (not recommended)
-            for c in ["lon", "lat", "geocode_error"]:
-                if c not in df_out.columns:
-                    df_out[c] = None
-            # Overwrite non-key columns from input; keep existing lon/lat columns
-            for col in df_in.columns:
-                df_out[col] = df_in[col]
     else:
         df_out = df_in.copy()
         for c in ["lon", "lat", "geocode_error"]:
@@ -196,61 +170,33 @@ def main():
     )
     df_out["__address_key"] = addr_keys
 
-    # Prepare list of unique address keys to geocode (missing lon/lat only)
-    df_missing = df_out[(df_out["lon"].isna()) | (df_out["lat"].isna())].copy()
-    # Drop rows without an address_key
-    df_missing = df_missing[df_missing["__address_key"].notna()]
-
-    # Unique keys not yet resolved in this CSV
-    pending_keys = df_missing["__address_key"].dropna().unique().tolist()
 
     # Deduplicate within this run to avoid double requests
     client = NominatimClient(min_interval_s=args.sleep)
-    fresh: Dict[str, Tuple[Optional[float], Optional[float], Optional[str]]] = {}
-
-    if pending_keys:
-        # Map address_key back to (כתובת, יישוב) by first occurrence
-        key_to_parts: Dict[str, Tuple[str, str]] = {}
-        for _, row in df_out.loc[df_out["__address_key"].isin(pending_keys), required_cols + ["__address_key"]].drop_duplicates("__address_key").iterrows():
-            key_to_parts[row["__address_key"]] = (row["כתובת"], row["יישוב"])
-
-        pbar = tqdm(pending_keys, desc="Geocoding (CSV cache)", unit="addr")
-        since_last_checkpoint = 0
-        for k in pbar:
-            if k in fresh:
+    
+    pbar = tqdm(df_out['lat'].isna().sum(), desc="Geocoding (CSV cache)", unit="addr")
+    df_out = df_out.reset_index(drop=True)
+    updates_count = 0
+    for idx in df_out.index:
+        row = df_out.loc[idx]
+        if pd.notna(row.get("lon")) and pd.notna(row.get("lat")):
+            continue
+        if not row["__address_key"]:
+            updates_count += 1
+            df_out.at[idx, "geocode_error"] = "no_address"
+            city = row["יישוב"] 
+            street = row["כתובת"]
+            if not city or not street:
+                print(f"Row {idx}: Missing both כתובת and יישוב; skipping.")
                 continue
-            street, city = key_to_parts.get(k, (None, None))
             lon, lat, err = client.geocode(street=street, city=city, country=args.country)
-            fresh[k] = (lon, lat, err)
-            since_last_checkpoint += 1
-
-            # Periodic checkpoint: write results into df_out and flush CSV
-            if since_last_checkpoint >= args.checkpoint_every:
-                # Apply fresh to df_out
-                sub = df_out["__address_key"].isin(list(fresh.keys()))
-                df_out.loc[sub, "lon"] = df_out.loc[sub, "__address_key"].map(lambda kk: fresh[kk][0])
-                df_out.loc[sub, "lat"] = df_out.loc[sub, "__address_key"].map(lambda kk: fresh[kk][1])
-                df_out.loc[sub, "geocode_error"] = df_out.loc[sub, "__address_key"].map(lambda kk: fresh[kk][2])
+            sub = df_out["__address_key"] == row["__address_key"]
+            df_out.loc[sub, "lon"] = lon
+            df_out.loc[sub, "lat"] = lat
+            pbar.update(sub.sum())
+            if updates_count >= args.checkpoint_every:
                 atomic_write_csv(df_out, args.out)
-                fresh.clear()
-                since_last_checkpoint = 0
-
-        # Final flush
-        if fresh:
-            sub = df_out["__address_key"].isin(list(fresh.keys()))
-            df_out.loc[sub, "lon"] = df_out.loc[sub, "__address_key"].map(lambda kk: fresh[kk][0])
-            df_out.loc[sub, "lat"] = df_out.loc[sub, "__address_key"].map(lambda kk: fresh[kk][1])
-            df_out.loc[sub, "geocode_error"] = df_out.loc[sub, "__address_key"].map(lambda kk: fresh[kk][2])
-            atomic_write_csv(df_out, args.out)
-            fresh.clear()
-    else:
-        # Nothing to geocode; still ensure file exists
-        atomic_write_csv(df_out, args.out)
-
-    # Clean up: optional — drop helper key
-    # (Leave it if you want re-runs to be even faster and diffable.)
-    # df_out.drop(columns=["__address_key"], inplace=True, errors="ignore")
-    # atomic_write_csv(df_out, args.out)
+                updates_count = 0
 
     print(f"Done. Wrote CSV cache: {args.out}")
 
