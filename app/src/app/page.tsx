@@ -92,7 +92,7 @@ export default function Home() {
         setStatisticalAreasLoading(true);
         try {
           console.log('Loading statistical areas...');
-          const response = await fetch('http://localhost:8001/statistical-areas/boundaries');
+          const response = await fetch('http://localhost:8001/statistical-areas/geojson');
           if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
           }
@@ -129,6 +129,150 @@ export default function Home() {
               }
             }, 'statistical-areas-boundaries'); // Add below boundary layer
 
+            // Add a highlighted fill layer for hover effects
+            currentMap.addLayer({
+              id: 'statistical-areas-highlight',
+              type: 'fill',
+              source: 'statistical-areas',
+              paint: {
+                'fill-color': '#3B82F6',
+                'fill-opacity': 0.3
+              },
+              filter: ['==', 'OBJECTID', ''] // Initially hide all features
+            }, 'statistical-areas-boundaries');
+
+            // Add click handler for statistical areas
+            currentMap.on('click', 'statistical-areas-fill', (e) => {
+              const f = e.features && e.features[0];
+              if (!f) return;
+
+              const props: any = f.properties || {};
+              const coord = e.lngLat;
+
+              // Define display order and Hebrew names
+              const hebrewFieldMap = [
+                { key: 'שם_יישוב', name: 'שם יישוב', priority: 1 },
+                { key: 'שם_יישוב_אנגלית', name: 'שם יישוב באנגלית', priority: 2 },
+                { key: 'סוג_יישוב', name: 'סוג יישוב', priority: 3 },
+                { key: 'אזור_גיאוגרפי', name: 'אזור גיאוגרפי', priority: 4 },
+                { key: 'סמל_יישוב', name: 'סמל יישוב', priority: 5 },
+                { key: 'שטח_קמ_ר', name: 'שטח', priority: 6, suffix: ' קמ"ר' },
+                { key: 'היקף_קמ', name: 'היקף', priority: 7, suffix: ' ק"מ' },
+                { key: 'סטטוס_יישוב', name: 'סטטוס יישוב', priority: 8 },
+                { key: 'קוד_תפקוד_עיקרי', name: 'קוד תפקוד עיקרי', priority: 9 },
+                { key: 'רובע', name: 'רובע', priority: 10 },
+                { key: 'תת_רובע', name: 'תת רובע', priority: 11 },
+                { key: 'סטטיסטיקה_2022', name: 'קוד סטטיסטיקה 2022', priority: 12 }
+              ];
+
+              // Format properties for display
+              const displayProps = hebrewFieldMap
+                .map(field => {
+                  const value = props[field.key];
+                  if (value === null || value === undefined || value === '' ||
+                      (typeof value === 'number' && isNaN(value))) {
+                    return null;
+                  }
+
+                  let displayValue = value;
+
+                  // Format numbers
+                  if (typeof value === 'number') {
+                    if (field.suffix) {
+                      displayValue = `${value.toLocaleString()}${field.suffix}`;
+                    } else {
+                      displayValue = value.toLocaleString();
+                    }
+                  }
+
+                  return {
+                    name: field.name,
+                    value: displayValue,
+                    priority: field.priority
+                  };
+                })
+                .filter(item => item !== null)
+                .sort((a, b) => (a?.priority || 0) - (b?.priority || 0));
+
+              // Get main title
+              const mainTitle = props['שם_יישוב'] || props['SHEM_YISHU'] || props['SHEM_YIS_1'] || 'אזור סטטיסטי';
+
+              // Create popup content
+              const popupContent = `
+                <div dir="rtl" style="font-family:Arial,sans-serif;min-width:320px;max-width:400px;direction:rtl">
+                  <div style="display:flex;align-items:center;margin-bottom:10px;justify-content:space-between">
+                    <span style="font-size:11px;color:#0369A1;background:#E0F2FE;padding:3px 8px;border-radius:12px;font-weight:600">אזור סטטיסטי</span>
+                    ${props['אזור_גיאוגרפי'] ? `<span style="font-size:11px;color:#059669;background:#ECFDF5;padding:3px 8px;border-radius:12px;font-weight:600">${props['אזור_גיאוגרפי']}</span>` : ''}
+                  </div>
+                  <div style="font-size:18px;font-weight:700;color:#111827;line-height:1.3;margin-bottom:4px;text-align:right">
+                    ${mainTitle}
+                  </div>
+                  ${props['שם_יישוב_אנגלית'] ? `<div style="font-size:14px;color:#6B7280;margin-bottom:16px;text-align:right">${props['שם_יישוב_אנגלית']}</div>` : ''}
+
+                  <div style="margin-bottom:16px">
+                    ${displayProps.map(item => `
+                      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #F3F4F6">
+                        <span style="font-size:13px;color:#374151;font-weight:600;text-align:right">${item.name}</span>
+                        <span style="font-size:13px;color:#111827;font-weight:700;text-align:left;margin-right:12px">${item.value}</span>
+                      </div>
+                    `).join('')}
+                  </div>
+
+                  <div style="display:flex;gap:8px;margin-top:16px">
+                    <a href="https://www.google.com/maps?q=${coord.lat},${coord.lng}" target="_blank" rel="noopener noreferrer"
+                       style="display:inline-block;font-size:12px;background:#2563EB;color:white;padding:8px 12px;border-radius:8px;text-decoration:none;flex:1;text-align:center;font-weight:600">מפות גוגל</a>
+                    <a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${coord.lat},${coord.lng}" target="_blank" rel="noopener noreferrer"
+                       style="display:inline-block;font-size:12px;background:#059669;color:white;padding:8px 12px;border-radius:8px;text-decoration:none;flex:1;text-align:center;font-weight:600">תצוגת רחוב</a>
+                  </div>
+                </div>
+              `;
+
+              new mapboxgl.Popup({ closeButton: true, offset: 15 })
+                .setLngLat(coord)
+                .setHTML(popupContent)
+                .addTo(currentMap);
+            });
+
+            // Add hover effects for statistical areas
+            let hoveredAreaId: string | number | null = null;
+
+            currentMap.on('mouseenter', 'statistical-areas-fill', (e) => {
+              currentMap.getCanvas().style.cursor = 'pointer';
+
+              if (e.features && e.features.length > 0) {
+                const feature = e.features[0];
+                hoveredAreaId = feature.properties?.OBJECTID;
+
+                // Highlight only the hovered area
+                if (hoveredAreaId) {
+                  currentMap.setFilter('statistical-areas-highlight', ['==', 'OBJECTID', hoveredAreaId]);
+                }
+              }
+            });
+
+            currentMap.on('mouseleave', 'statistical-areas-fill', () => {
+              currentMap.getCanvas().style.cursor = '';
+
+              // Remove highlight
+              currentMap.setFilter('statistical-areas-highlight', ['==', 'OBJECTID', '']);
+              hoveredAreaId = null;
+            });
+
+            // Handle mouse move for precise highlighting
+            currentMap.on('mousemove', 'statistical-areas-fill', (e) => {
+              if (e.features && e.features.length > 0) {
+                const feature = e.features[0];
+                const newHoveredId = feature.properties?.OBJECTID;
+
+                if (newHoveredId !== hoveredAreaId) {
+                  hoveredAreaId = newHoveredId;
+                  if (hoveredAreaId) {
+                    currentMap.setFilter('statistical-areas-highlight', ['==', 'OBJECTID', hoveredAreaId]);
+                  }
+                }
+              }
+            });
+
             console.log('Added statistical areas layers to map');
           } else {
             // Update existing source
@@ -138,6 +282,7 @@ export default function Home() {
           // Show the layers
           currentMap.setLayoutProperty('statistical-areas-boundaries', 'visibility', 'visible');
           currentMap.setLayoutProperty('statistical-areas-fill', 'visibility', 'visible');
+          currentMap.setLayoutProperty('statistical-areas-highlight', 'visibility', 'visible');
 
         } catch (error) {
           console.error('Error loading statistical areas:', error);
@@ -151,6 +296,9 @@ export default function Home() {
         }
         if (currentMap.getLayer('statistical-areas-fill')) {
           currentMap.setLayoutProperty('statistical-areas-fill', 'visibility', 'none');
+        }
+        if (currentMap.getLayer('statistical-areas-highlight')) {
+          currentMap.setLayoutProperty('statistical-areas-highlight', 'visibility', 'none');
         }
       }
     };

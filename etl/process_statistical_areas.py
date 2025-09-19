@@ -60,6 +60,62 @@ def process_statistical_areas(gdf):
         print("Converting to WGS84 (EPSG:4326)...")
         gdf = gdf.to_crs('EPSG:4326')
 
+    # Add Hebrew field names and enhanced data
+    print("Adding Hebrew field mappings and enhanced data...")
+
+    # Create Hebrew field mappings as additional columns
+    gdf['שם_יישוב'] = gdf['SHEM_YISHU']
+    gdf['שם_יישוב_אנגלית'] = gdf['SHEM_YIS_1']
+    gdf['סמל_יישוב'] = gdf['SEMEL_YISH']
+    gdf['סטטיסטיקה_2022'] = gdf['STAT_2022']
+    gdf['סטטוס_יישוב'] = gdf['YISHUV_STA']
+    gdf['רובע'] = gdf['ROVA']
+    gdf['תת_רובע'] = gdf['TAT_ROVA']
+    gdf['קוד_תפקוד_עיקרי'] = gdf['COD_TIFKUD']
+
+    # Add calculated fields
+    gdf['שטח_קמ_ר'] = (gdf['SHAPE_Area'] / 1000000).round(3)  # Convert to km²
+    gdf['היקף_קמ'] = (gdf['SHAPE_Leng'] / 1000).round(3)  # Convert to km
+
+    # Add settlement type based on status code
+    def get_settlement_type(status_code):
+        if pd.isna(status_code):
+            return 'לא ידוע'
+
+        status_code = int(status_code)
+
+        # Common Israeli settlement type codes
+        if status_code >= 10000 and status_code < 20000:
+            return 'עיר'
+        elif status_code >= 20000 and status_code < 30000:
+            return 'מועצה מקומית'
+        elif status_code >= 30000 and status_code < 40000:
+            return 'מועצה אזורית'
+        elif status_code >= 40000 and status_code < 50000:
+            return 'קיבוץ'
+        elif status_code >= 50000 and status_code < 60000:
+            return 'מושב'
+        elif status_code >= 70000 and status_code < 80000:
+            return 'יישוב קהילתי'
+        else:
+            return 'אחר'
+
+    gdf['סוג_יישוב'] = gdf['YISHUV_STA'].apply(get_settlement_type)
+
+    # Add region based on geographic location
+    def get_region(lat, lon):
+        if lat > 32.5:
+            return 'צפון'
+        elif lat > 31.5:
+            return 'מרכז'
+        elif lat > 30.5:
+            return 'שפלה ויהודה'
+        else:
+            return 'דרום'
+
+    centroids = gdf.geometry.centroid
+    gdf['אזור_גיאוגרפי'] = [get_region(centroid.y, centroid.x) for centroid in centroids]
+
     # Print some basic info about the data
     print(f"Bounds: {gdf.total_bounds}")
     print(f"Sample of first few rows:")
@@ -91,7 +147,21 @@ def process_statistical_areas(gdf):
     gdf_filtered = gdf[mask].copy()
     print(f"After filtering to Israel bounds: {len(gdf_filtered)} areas")
 
-    return gdf_filtered
+    # Filter out areas without primary function code (קוד תפקוד עיקרי)
+    print("Filtering areas with primary function code...")
+    function_code_mask = (
+        pd.notna(gdf_filtered['COD_TIFKUD']) &
+        (gdf_filtered['COD_TIFKUD'] != 0) &
+        (gdf_filtered['COD_TIFKUD'] != '')
+    )
+
+    gdf_with_function = gdf_filtered[function_code_mask].copy()
+
+    filtered_out_count = len(gdf_filtered) - len(gdf_with_function)
+    print(f"Filtered out {filtered_out_count} areas without primary function code")
+    print(f"Final count: {len(gdf_with_function)} areas with primary function code")
+
+    return gdf_with_function
 
 def save_processed_data(gdf):
     """Save the processed data in multiple formats."""

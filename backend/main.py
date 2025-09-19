@@ -9,6 +9,7 @@ import re
 from typing import Optional
 from statistics import mean
 import geopandas as gpd
+import pandas as pd
 
 app = FastAPI(title="Neighborhood Insights API", version="1.0.0")
 
@@ -335,15 +336,26 @@ def search_statistical_areas(
             results = []
             for idx, row in result_gdf.iterrows():
                 area_info = row.drop('geometry').to_dict()
+
+                # Clean NaN values for JSON serialization
+                cleaned_info = {}
+                for key, value in area_info.items():
+                    if pd.isna(value):
+                        cleaned_info[key] = None
+                    elif isinstance(value, float) and (value != value):  # Check for NaN
+                        cleaned_info[key] = None
+                    else:
+                        cleaned_info[key] = value
+
                 # Add bounds for the area
                 bounds = row.geometry.bounds
-                area_info['bounds'] = {
+                cleaned_info['bounds'] = {
                     'min_lon': bounds[0],
                     'min_lat': bounds[1],
                     'max_lon': bounds[2],
                     'max_lat': bounds[3]
                 }
-                results.append(area_info)
+                results.append(cleaned_info)
 
             return {
                 "areas": results,
@@ -375,7 +387,18 @@ def search_statistical_areas(
             results = []
             for idx, row in result_gdf.iterrows():
                 area_info = row.drop('geometry').to_dict()
-                results.append(area_info)
+
+                # Clean NaN values for JSON serialization
+                cleaned_info = {}
+                for key, value in area_info.items():
+                    if pd.isna(value):
+                        cleaned_info[key] = None
+                    elif isinstance(value, float) and (value != value):  # Check for NaN
+                        cleaned_info[key] = None
+                    else:
+                        cleaned_info[key] = value
+
+                results.append(cleaned_info)
 
             return {
                 "areas": results,
