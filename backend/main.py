@@ -1,11 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 import csv
+import json
 from pathlib import Path
 import csv
 import re
 from typing import Optional
 from statistics import mean
+import geopandas as gpd
 
 app = FastAPI(title="Neighborhood Insights API", version="1.0.0")
 
@@ -23,6 +26,7 @@ app.add_middleware(
 BASE_DIR = Path(__file__).resolve().parent
 RAW_PATH = (BASE_DIR.parent / "data" / "raw").resolve()
 PROCESSED_PATH = (BASE_DIR.parent / "data" / "processed").resolve()
+STATIC_DATA_PATH = (BASE_DIR.parent / "app" / "public" / "data").resolve()
 
 def is_in_israel(lat: float, lon: float) -> bool:
     """Check if coordinates are roughly within Israel's boundaries"""
@@ -130,12 +134,52 @@ def load_mosdot_data():
 
     return pois
 
+def load_statistical_areas():
+    """Load statistical areas data from processed files."""
+
+    parquet_path = PROCESSED_PATH / "statistical_areas_2022.parquet"
+    metadata_path = PROCESSED_PATH / "statistical_areas_metadata.json"
+
+    areas_data = {}
+
+    # Load metadata if available
+    if metadata_path.exists():
+        try:
+            with open(metadata_path, 'r', encoding='utf-8') as f:
+                areas_data['metadata'] = json.load(f)
+        except Exception as e:
+            print(f"Error loading statistical areas metadata: {e}")
+            areas_data['metadata'] = {}
+
+    # Load the actual geodata
+    if parquet_path.exists():
+        try:
+            gdf = gpd.read_parquet(parquet_path)
+            areas_data['gdf'] = gdf
+            areas_data['total'] = len(gdf)
+            print(f"Loaded {len(gdf)} statistical areas from parquet")
+        except Exception as e:
+            print(f"Error loading statistical areas parquet: {e}")
+            areas_data['gdf'] = None
+            areas_data['total'] = 0
+    else:
+        print(f"Statistical areas parquet not found at {parquet_path}")
+        areas_data['gdf'] = None
+        areas_data['total'] = 0
+
+    return areas_data
+
 # Load data on startup (mosdot only)
 pois_data = load_mosdot_data()
+statistical_areas = load_statistical_areas()
 
 @app.get("/")
 def read_root():
-    return {"message": "Neighborhood Insights API", "total_pois": len(pois_data)}
+    return {
+        "message": "Neighborhood Insights API",
+        "total_pois": len(pois_data),
+        "total_statistical_areas": statistical_areas.get('total', 0)
+    }
 
 @app.get("/pois")
 def get_all_pois(poi_type: Optional[str] = None, limit: Optional[int] = None):
@@ -229,6 +273,126 @@ def debug_stats():
         "types": types[:10],
         "sample": pois_data[:3],
     }
+
+# Statistical Areas Endpoints
+
+@app.get("/statistical-areas/info")
+def get_statistical_areas_info():
+    """Get information about statistical areas data."""
+    return {
+        "total_areas": statistical_areas.get('total', 0),
+        "metadata": statistical_areas.get('metadata', {}),
+        "data_available": statistical_areas.get('gdf') is not None
+    }
+
+@app.get("/statistical-areas/geojson")
+def get_statistical_areas_geojson():
+    """Serve the lightweight GeoJSON file for web mapping."""
+    geojson_path = STATIC_DATA_PATH / "statistical_areas.geojson"
+    if geojson_path.exists():
+        return FileResponse(
+            geojson_path,
+            media_type="application/geo+json",
+            filename="statistical_areas.geojson"
+        )
+    return {"error": "Statistical areas GeoJSON not found"}
+
+@app.get("/statistical-areas/boundaries")
+def get_statistical_areas_boundaries():
+    """Serve the boundaries-only GeoJSON file for lightweight rendering."""
+    boundaries_path = STATIC_DATA_PATH / "statistical_areas_boundaries.geojson"
+    if boundaries_path.exists():
+        return FileResponse(
+            boundaries_path,
+            media_type="application/geo+json",
+            filename="statistical_areas_boundaries.geojson"
+        )
+    return {"error": "Statistical areas boundaries not found"}
+
+@app.get("/statistical-areas/search")
+def search_statistical_areas(
+    lat: Optional[float] = None,
+    lon: Optional[float] = None,
+    bounds: Optional[str] = None
+):
+    """Search statistical areas by point or bounding box."""
+    if statistical_areas.get('gdf') is None:
+        return {"error": "Statistical areas data not available"}
+
+    gdf = statistical_areas['gdf']
+
+    if lat is not None and lon is not None:
+        # Point-in-polygon search
+        from shapely.geometry import Point
+        point = Point(lon, lat)
+
+        # Find areas containing the point
+        contains_mask = gdf.geometry.contains(point)
+        result_gdf = gdf[contains_mask]
+
+        if len(result_gdf) > 0:
+            # Convert to regular dict (without geometry for JSON response)
+            results = []
+            for idx, row in result_gdf.iterrows():
+                area_info = row.drop('geometry').to_dict()
+                # Add bounds for the area
+                bounds = row.geometry.bounds
+                area_info['bounds'] = {
+                    'min_lon': bounds[0],
+                    'min_lat': bounds[1],
+                    'max_lon': bounds[2],
+                    'max_lat': bounds[3]
+                }
+                results.append(area_info)
+
+            return {
+                "areas": results,
+                "total": len(results),
+                "search_point": {"latitude": lat, "longitude": lon}
+            }
+        else:
+            return {
+                "areas": [],
+                "total": 0,
+                "search_point": {"latitude": lat, "longitude": lon},
+                "message": "No statistical area found at this location"
+            }
+
+    elif bounds:
+        # Bounding box search
+        try:
+            # Expect bounds as "min_lon,min_lat,max_lon,max_lat"
+            min_lon, min_lat, max_lon, max_lat = map(float, bounds.split(','))
+
+            from shapely.geometry import box
+            bbox = box(min_lon, min_lat, max_lon, max_lat)
+
+            # Find areas that intersect with the bounding box
+            intersects_mask = gdf.geometry.intersects(bbox)
+            result_gdf = gdf[intersects_mask]
+
+            # Return basic info (no geometry)
+            results = []
+            for idx, row in result_gdf.iterrows():
+                area_info = row.drop('geometry').to_dict()
+                results.append(area_info)
+
+            return {
+                "areas": results,
+                "total": len(results),
+                "search_bounds": {
+                    "min_lon": min_lon,
+                    "min_lat": min_lat,
+                    "max_lon": max_lon,
+                    "max_lat": max_lat
+                }
+            }
+
+        except ValueError:
+            return {"error": "Invalid bounds format. Use: min_lon,min_lat,max_lon,max_lat"}
+
+    else:
+        return {"error": "Provide either lat/lon for point search or bounds for area search"}
 
 if __name__ == "__main__":
     import uvicorn

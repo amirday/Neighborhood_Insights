@@ -21,6 +21,8 @@ export default function Home() {
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [mapReady, setMapReady] = useState(false);
+  const [showStatisticalAreas, setShowStatisticalAreas] = useState(false);
+  const [statisticalAreasLoading, setStatisticalAreasLoading] = useState(false);
 
   // Fetch POI data from backend only when map is ready
   useEffect(() => {
@@ -79,6 +81,82 @@ export default function Home() {
 
     fetchPOIs();
   }, [mapReady]);
+
+  // Handle statistical areas toggle
+  useEffect(() => {
+    if (!map.current || !mapReady) return;
+    const currentMap = map.current;
+
+    const loadStatisticalAreas = async () => {
+      if (showStatisticalAreas) {
+        setStatisticalAreasLoading(true);
+        try {
+          console.log('Loading statistical areas...');
+          const response = await fetch('http://localhost:8001/statistical-areas/boundaries');
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          const geojsonData = await response.json();
+          console.log('Statistical areas loaded:', geojsonData);
+
+          // Add source if it doesn't exist
+          if (!currentMap.getSource('statistical-areas')) {
+            currentMap.addSource('statistical-areas', {
+              type: 'geojson',
+              data: geojsonData
+            });
+
+            // Add boundary layer (lines)
+            currentMap.addLayer({
+              id: 'statistical-areas-boundaries',
+              type: 'line',
+              source: 'statistical-areas',
+              paint: {
+                'line-color': '#2563EB',
+                'line-width': 1.5,
+                'line-opacity': 0.7
+              }
+            });
+
+            // Add fill layer (areas) with low opacity
+            currentMap.addLayer({
+              id: 'statistical-areas-fill',
+              type: 'fill',
+              source: 'statistical-areas',
+              paint: {
+                'fill-color': '#3B82F6',
+                'fill-opacity': 0.1
+              }
+            }, 'statistical-areas-boundaries'); // Add below boundary layer
+
+            console.log('Added statistical areas layers to map');
+          } else {
+            // Update existing source
+            (currentMap.getSource('statistical-areas') as mapboxgl.GeoJSONSource).setData(geojsonData);
+          }
+
+          // Show the layers
+          currentMap.setLayoutProperty('statistical-areas-boundaries', 'visibility', 'visible');
+          currentMap.setLayoutProperty('statistical-areas-fill', 'visibility', 'visible');
+
+        } catch (error) {
+          console.error('Error loading statistical areas:', error);
+        } finally {
+          setStatisticalAreasLoading(false);
+        }
+      } else {
+        // Hide the layers
+        if (currentMap.getLayer('statistical-areas-boundaries')) {
+          currentMap.setLayoutProperty('statistical-areas-boundaries', 'visibility', 'none');
+        }
+        if (currentMap.getLayer('statistical-areas-fill')) {
+          currentMap.setLayoutProperty('statistical-areas-fill', 'visibility', 'none');
+        }
+      }
+    };
+
+    loadStatisticalAreas();
+  }, [showStatisticalAreas, mapReady]);
 
   // Initialize map
   useEffect(() => {
@@ -306,17 +384,57 @@ export default function Home() {
             })}
           </div>
         )}
-        
+
+        {/* Statistical Areas Toggle */}
+        <div className="mt-6 pt-4 border-t border-gray-200">
+          <h3 className="text-sm font-semibold text-gray-900 mb-3">Boundaries</h3>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <div className="relative">
+              <input
+                type="checkbox"
+                checked={showStatisticalAreas}
+                onChange={(e) => setShowStatisticalAreas(e.target.checked)}
+                className="sr-only"
+              />
+              <div className={`w-5 h-5 rounded border-2 ${
+                showStatisticalAreas
+                  ? 'bg-blue-600 border-blue-600'
+                  : 'border-gray-300 group-hover:border-blue-400'
+              }`}>
+                {showStatisticalAreas && (
+                  <svg className="w-3 h-3 text-white m-0.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                )}
+              </div>
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-900">
+                  Statistical Areas
+                </span>
+                {statisticalAreasLoading && (
+                  <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Show statistical area boundaries
+              </p>
+            </div>
+          </label>
+        </div>
+
         {/* Quick Actions */}
         <div className="mt-6 pt-4 border-t border-gray-200">
           <div className="flex space-x-2">
-            <button 
+            <button
               onClick={() => setSelectedTypes(poiTypes)}
               className="flex-1 text-xs py-2 px-3 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100"
             >
               Show All
             </button>
-            <button 
+            <button
               onClick={() => setSelectedTypes([])}
               className="flex-1 text-xs py-2 px-3 bg-gray-50 text-gray-700 rounded-lg hover:bg-gray-100"
             >
