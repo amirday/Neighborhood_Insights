@@ -20,6 +20,8 @@ Notes:
 - Safe to stop/re-run: it resumes from the existing CSV.
 """
 
+#TODO: fix the script df_out.drop_duplicates('שם וסמל מוסד')
+
 from __future__ import annotations
 import argparse
 import os
@@ -136,7 +138,7 @@ def main():
                     help="Output CSV path (also used as cache on re-runs)")
     ap.add_argument("--sleep", type=float, default=1.1, help="Seconds between requests (>=1.0 for public Nominatim)")
     ap.add_argument("--country", default="Israel", help="Country appended to the address key")
-    ap.add_argument("--checkpoint-every", type=int, default=25, help="Write CSV every N newly geocoded addresses")
+    ap.add_argument("--checkpoint-every", type=int, default=50, help="Write CSV every N newly geocoded addresses")
     ap.add_argument("--max-rows", type=int, default=None, help="Optional limit on number of input rows to process")
     args = ap.parse_args()
 
@@ -223,7 +225,7 @@ def main():
             since_last_checkpoint += 1
 
             # Periodic checkpoint: write results into df_out and flush CSV
-            if since_last_checkpoint >= max(25, args.checkpoint_every):
+            if since_last_checkpoint >= args.checkpoint_every:
                 # Apply fresh to df_out
                 sub = df_out["__address_key"].isin(list(fresh.keys()))
                 df_out.loc[sub, "lon"] = df_out.loc[sub, "__address_key"].map(lambda kk: fresh[kk][0])

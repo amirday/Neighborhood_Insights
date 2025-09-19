@@ -55,7 +55,7 @@ def load_mosdot_data():
     Expected columns include at least: 'lon', 'lat', and Hebrew name fields.
     We coerce lon/lat to floats and skip rows without valid coordinates.
     """
-    mosdot_file = PROCESSED_PATH / "mosdot.csv"
+    mosdot_file = PROCESSED_PATH / "mosdot_2.csv"
     pois: list[dict] = []
     if not mosdot_file.exists():
         print(f"mosdot.csv not found at {mosdot_file}")
@@ -65,14 +65,23 @@ def load_mosdot_data():
         # utf-8-sig to strip potential BOM
         with open(mosdot_file, "r", encoding="utf-8-sig", newline="") as f:
             reader = csv.DictReader(f)
+            # Debug: print headers on first read
+            if len(pois) == 0:
+                print("CSV Headers:", reader.fieldnames)
+                print("Looking for 'lon' and 'lat' columns")
             for idx, row in enumerate(reader, start=1):
                 lon = _safe_float(row.get("lon", ""))
                 lat = _safe_float(row.get("lat", ""))
+                # Debug: print first few rows to see what we're getting
+                if idx <= 3:
+                    print(f"Row {idx}: lon='{row.get('lon', 'MISSING')}', lat='{row.get('lat', 'MISSING')}'")
+                    available_coords = {k: v for k, v in row.items() if any(coord in k.lower() for coord in ['lon', 'lat', 'coordinate', 'x', 'y'])}
+                    print(f"Available coordinate-like columns: {available_coords}")
                 if lon is None or lat is None:
                     continue
 
                 # Filter to Israel-ish bounding box to avoid geocode outliers
-                if not (29.0 <= lat <= 33.8 and 33.5 <= lon <= 36.5):
+                if not (29.0 <= lat <= 33.8 and 34.2 <= lon <= 35.9):
                     continue
 
                 name_field = row.get("שם וסמל מוסד") or row.get("שם מוסד") or ""

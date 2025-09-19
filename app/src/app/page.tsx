@@ -20,13 +20,32 @@ export default function Home() {
   const [poiTypes, setPOITypes] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [mapReady, setMapReady] = useState(false);
 
-  // Fetch POI data from backend
+  // Fetch POI data from backend only when map is ready
   useEffect(() => {
+    if (!mapReady) {
+      console.log('Map not ready yet, waiting...');
+      return;
+    }
+
     const fetchPOIs = async () => {
       try {
+        console.log('Map is ready, fetching POIs...');
         const response = await fetch('/api/pois');
         const data = await response.json();
+        console.log('Raw API response:', data);
+        console.log('POIs array:', data.pois);
+        console.log('POIs array length:', data.pois?.length || 0);
+        
+        if (!data.pois || !Array.isArray(data.pois)) {
+          console.error('No POIs data received from API');
+          setLoading(false);
+          return;
+        }
+        
+        console.log('First POI:', data.pois[0]);
+        
         // Coerce to numbers and hard-filter to Israel bounding box
         const cleaned: POI[] = data.pois
           .map((p: any) => ({
@@ -34,10 +53,19 @@ export default function Home() {
             longitude: Number(p.longitude),
             latitude: Number(p.latitude),
           }))
-          .filter((p: POI) =>
-            p.latitude >= 29.0 && p.latitude <= 33.8 &&
-            p.longitude >= 33.5 && p.longitude <= 36.5
-          );
+          .filter((p: POI) => {
+            const valid = p.latitude >= 29.0 && p.latitude <= 33.8 &&
+                         p.longitude >= 34.2 && p.longitude <= 35.9;
+            if (!valid) {
+              console.log('Filtered out POI:', p);
+            }
+            return valid;
+          });
+        
+        console.log('Fetched POIs:', data.pois?.length || 0);
+        console.log('Cleaned POIs:', cleaned.length);
+        console.log('Sample cleaned POI:', cleaned[0]);
+        
         setPois(cleaned);
         const types = Array.from(new Set(cleaned.map((p: POI) => p.type)));
         setPOITypes(types);
@@ -50,7 +78,7 @@ export default function Home() {
     };
 
     fetchPOIs();
-  }, []);
+  }, [mapReady]);
 
   // Initialize map
   useEffect(() => {
@@ -67,98 +95,118 @@ export default function Home() {
         fadeDuration: 0,
         projection: 'mercator',
         renderWorldCopies: false,
-        maxBounds: [
-          [33.5, 29.0], // SW (lng, lat)
-          [36.5, 33.8], // NE (lng, lat)
-        ],
       });
 
       // Add navigation control (zoom buttons)
       map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+
+      // Set map as ready when style is loaded
+      if (map.current.isStyleLoaded()) {
+        console.log('Map style already loaded, setting map ready');
+        setMapReady(true);
+      } else {
+        map.current.on('style.load', () => {
+          console.log('Map style loaded, setting map ready');
+          setMapReady(true);
+        });
+      }
     }
   }, []);
 
   // Render POIs as a circle layer (no DOM markers)
   useEffect(() => {
-    if (!map.current) return;
+    if (!map.current || !mapReady) return;
     const currentMap = map.current;
-    if (!pois.length) {
-      // Clear if source exists
-      if (currentMap.getSource('pois')) {
-        (currentMap.getSource('pois') as mapboxgl.GeoJSONSource).setData({ type: 'FeatureCollection', features: [] });
+    
+    const updatePOIs = () => {
+      if (!pois.length) {
+        // Clear if source exists
+        if (currentMap.getSource('pois')) {
+          (currentMap.getSource('pois') as mapboxgl.GeoJSONSource).setData({ type: 'FeatureCollection', features: [] });
+        }
+        return;
       }
-      return;
-    }
 
-    const filtered = pois.filter(p => selectedTypes.includes(p.type));
-    const fc: GeoJSON.FeatureCollection<GeoJSON.Point, any> = {
-      type: 'FeatureCollection',
-      features: filtered.map(p => ({
-        type: 'Feature',
-        properties: {
-          id: p.id,
-          name_he: p.name_he,
-          name_en: p.name_en,
-          type: p.type,
-        },
-        geometry: { type: 'Point', coordinates: [p.longitude, p.latitude] },
-      })),
+      const filtered = pois.filter(p => selectedTypes.includes(p.type));
+      console.log('Total POIs:', pois.length);
+      console.log('Selected types:', selectedTypes);
+      console.log('Filtered POIs:', filtered.length);
+      const fc: GeoJSON.FeatureCollection<GeoJSON.Point, any> = {
+        type: 'FeatureCollection',
+        features: filtered.map(p => ({
+          type: 'Feature',
+          properties: {
+            id: p.id,
+            name_he: p.name_he,
+            name_en: p.name_en,
+            type: p.type,
+          },
+          geometry: { type: 'Point', coordinates: [p.longitude, p.latitude] },
+        })),
+      };
+      console.log('GeoJSON features:', fc.features.length);
+
+      if (currentMap.getSource('pois')) {
+        (currentMap.getSource('pois') as mapboxgl.GeoJSONSource).setData(fc as any);
+      } else {
+        console.log('Adding new source with data:', fc);
+        currentMap.addSource('pois', { type: 'geojson', data: fc });
+
+        // Circle layer for points
+        currentMap.addLayer({
+          id: 'pois-circles',
+          type: 'circle',
+          source: 'pois',
+          paint: {
+            'circle-radius': 6,
+            'circle-stroke-width': 2,
+            'circle-stroke-color': '#ffffff',
+            'circle-color': [
+              'match', ['get', 'type'],
+              'schools', '#3B82F6',
+              'kindergartens', '#10B981',
+              'clinics', '#EF4444',
+              'bus_stops', '#F59E0B',
+              /* other */ '#6B7280'
+            ],
+          },
+        });
+        console.log('Added POI layer to map');
+
+        // Popup on click
+        currentMap.on('click', 'pois-circles', (e) => {
+          const f = e.features && e.features[0];
+          if (!f) return;
+          const props: any = f.properties || {};
+          const coord = (f.geometry as any).coordinates;
+          new mapboxgl.Popup({ closeButton: false, offset: 10 })
+            .setLngLat(coord)
+            .setHTML(
+              `<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;min-width:220px">
+                <div style="display:flex;align-items:center;margin-bottom:6px">
+                  <span style="font-size:10px;color:#6B7280;text-transform:uppercase;letter-spacing:.4px;background:#F3F4F6;padding:2px 6px;border-radius:999px">${String(props.type || '').replace('_',' ')}</span>
+                </div>
+                <div style="font-size:15px;font-weight:700;color:#111827;line-height:1.2;margin-bottom:2px">${props.name_he || ''}</div>
+                <div style="font-size:12px;color:#6B7280;margin-bottom:8px">${props.name_en || ''}</div>
+                <div style="display:flex;gap:8px">
+                  <a href="/details/${props.id}" target="_blank" rel="noopener noreferrer"
+                     style="display:inline-block;font-size:12px;background:#2563EB;color:white;padding:6px 10px;border-radius:8px;text-decoration:none">פרטים</a>
+                  <a href="https://www.google.com/maps?q=${coord[1]},${coord[0]}" target="_blank" rel="noopener noreferrer"
+                     style="display:inline-block;font-size:12px;background:#6B7280;color:white;padding:6px 10px;border-radius:8px;text-decoration:none">מפה</a>
+                  <a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${coord[1]},${coord[0]}" target="_blank" rel="noopener noreferrer"
+                     style="display:inline-block;font-size:12px;background:#059669;color:white;padding:6px 10px;border-radius:8px;text-decoration:none">תצוגת רחוב</a>
+                </div>
+              </div>`
+            )
+            .addTo(currentMap);
+        });
+      }
     };
 
-    if (currentMap.getSource('pois')) {
-      (currentMap.getSource('pois') as mapboxgl.GeoJSONSource).setData(fc as any);
-    } else {
-      currentMap.addSource('pois', { type: 'geojson', data: fc });
-
-      // Circle layer for points
-      currentMap.addLayer({
-        id: 'pois-circles',
-        type: 'circle',
-        source: 'pois',
-        paint: {
-          'circle-radius': 6,
-          'circle-stroke-width': 2,
-          'circle-stroke-color': '#ffffff',
-          'circle-color': [
-            'match', ['get', 'type'],
-            'schools', '#3B82F6',
-            'kindergartens', '#10B981',
-            'clinics', '#EF4444',
-            'bus_stops', '#F59E0B',
-            /* other */ '#6B7280'
-          ],
-        },
-      });
-
-      // Popup on click
-      currentMap.on('click', 'pois-circles', (e) => {
-        const f = e.features && e.features[0];
-        if (!f) return;
-        const props: any = f.properties || {};
-        const coord = (f.geometry as any).coordinates;
-        new mapboxgl.Popup({ closeButton: false, offset: 10 })
-          .setLngLat(coord)
-          .setHTML(
-            `<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;min-width:220px">
-              <div style="display:flex;align-items:center;margin-bottom:6px">
-                <span style="font-size:10px;color:#6B7280;text-transform:uppercase;letter-spacing:.4px;background:#F3F4F6;padding:2px 6px;border-radius:999px">${String(props.type || '').replace('_',' ')}</span>
-              </div>
-              <div style="font-size:15px;font-weight:700;color:#111827;line-height:1.2;margin-bottom:2px">${props.name_he || ''}</div>
-              <div style="font-size:12px;color:#6B7280;margin-bottom:8px">${props.name_en || ''}</div>
-              <div style="display:flex;gap:8px">
-                <a href="/details/${props.id}" target="_blank" rel="noopener noreferrer"
-                   style="display:inline-block;font-size:12px;background:#2563EB;color:white;padding:6px 10px;border-radius:8px;text-decoration:none">פרטים</a>
-                <a href="https://www.google.com/maps?q=${coord[1]},${coord[0]}" target="_blank" rel="noopener noreferrer"
-                   style="display:inline-block;font-size:12px;background:#6B7280;color:white;padding:6px 10px;border-radius:8px;text-decoration:none">מפה</a>
-                <a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${coord[1]},${coord[0]}" target="_blank" rel="noopener noreferrer"
-                   style="display:inline-block;font-size:12px;background:#059669;color:white;padding:6px 10px;border-radius:8px;text-decoration:none">תצוגת רחוב</a>
-              </div>
-            </div>`
-          )
-          .addTo(currentMap);
-      });
-    }
-  }, [pois, selectedTypes]);
+    // Since we only call this effect when mapReady is true, we know the map is ready
+    console.log('Updating POIs on ready map');
+    updatePOIs();
+  }, [pois, selectedTypes, mapReady]);
 
   // Get marker color based on POI type
   const getMarkerColor = (type: string): string => {
