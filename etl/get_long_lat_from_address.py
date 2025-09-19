@@ -27,6 +27,7 @@ import argparse
 import os
 import time
 import re
+from itertools import combinations
 from typing import Dict, Optional, Tuple
 
 import pandas as pd
@@ -45,6 +46,34 @@ def normalize_space(s: str) -> str:
 def make_address_key(address: Optional[str], city: Optional[str], country: Optional[str]) -> Optional[str]:
     parts = [normalize_space(x).lower() for x in (address, city, country) if x and normalize_space(x)]
     return " | ".join(parts) if parts else None
+
+
+def remove_numbers_from_street(street: str) -> str:
+    """Remove all numbers from street address."""
+    return re.sub(r'\d+', '', street).strip()
+
+
+def generate_word_combinations(street: str) -> list[str]:
+    """Generate all combinations by removing words from street name.
+    Returns combinations sorted by number of words removed (fewer removals first).
+    """
+    if not street or not street.strip():
+        return []
+
+    words = street.strip().split()
+    if len(words) <= 1:
+        return [street]  # Can't remove words if only one word
+
+    result_combinations = []
+
+    # Try removing 1 word, then 2 words, etc.
+    for num_to_remove in range(1, len(words)):
+        for indices_to_remove in combinations(range(len(words)), num_to_remove):
+            remaining_words = [words[i] for i in range(len(words)) if i not in indices_to_remove]
+            if remaining_words:  # Must have at least one word
+                result_combinations.append(' '.join(remaining_words))
+
+    return result_combinations
 
 
 # ----------------------------
@@ -66,9 +95,9 @@ class NominatimClient:
             time.sleep(self.min_interval_s - delta)
 
     def geocode(self, *, street: Optional[str], city: Optional[str], country: Optional[str],
-                retries: int = 2) -> Tuple[Optional[float], Optional[float], Optional[str]]:
+                retries: int = 2) -> Tuple[Optional[float], Optional[float], Optional[str], Optional[str]]:
         """
-        Returns (lon, lat, error). If success, error=None.
+        Returns (lon, lat, error, fixed_address). If success, error=None.
         """
         url = "https://nominatim.openstreetmap.org/search"
         params = {
@@ -87,6 +116,10 @@ class NominatimClient:
             q_parts = [p for p in (street, city, country) if p]
             if q_parts:
                 params["q"] = ", ".join(q_parts)
+
+        # Build the fixed address string
+        address_parts = [p for p in (country, city, street) if p and p.strip()]
+        fixed_address = ", ".join(address_parts) if address_parts else None
 
         headers = {
             "User-Agent": self.user_agent,
@@ -108,12 +141,57 @@ class NominatimClient:
                 if data:
                     lat = float(data[0]["lat"])
                     lon = float(data[0]["lon"])
-                    return lon, lat, None
-                return None, None, "no_result"
+                    return lon, lat, None, fixed_address
+                return None, None, "no_result", fixed_address
             except Exception as e:
                 last_err = f"exc:{type(e).__name__}"
                 time.sleep(min(3.0, 0.5 * (2 ** attempt)))
-        return None, None, last_err or "error"
+        return None, None, last_err or "error", fixed_address
+
+    def geocode_with_fallback(self, *, street: Optional[str], city: Optional[str], country: Optional[str],
+                             retries: int = 2) -> Tuple[Optional[float], Optional[float], Optional[str], Optional[str]]:
+        """
+        Geocode with fallback strategies when initial query fails.
+        Returns (lon, lat, error, fixed_address). If success, error=None.
+        """
+        if not street:
+            return self.geocode(street=street, city=city, country=country, retries=retries)
+
+        # Try original address first
+        lon, lat, err, fixed_addr = self.geocode(street=street, city=city, country=country, retries=retries)
+        if err is None:  # Success
+            return lon, lat, err, fixed_addr
+
+        # Fallback 1: Remove numbers from street
+        street_no_numbers = remove_numbers_from_street(street)
+        if street_no_numbers and street_no_numbers != street:
+            lon, lat, err, fixed_addr = self.geocode(street=street_no_numbers, city=city, country=country, retries=retries)
+            if err is None:  # Success
+                return lon, lat, err, fixed_addr
+
+        # Fallback 2: Try word combinations (remove words from street name)
+        word_combos = generate_word_combinations(street_no_numbers if street_no_numbers else street)
+        for combo_street in word_combos:
+            lon, lat, err, fixed_addr = self.geocode(street=combo_street, city=city, country=country, retries=retries)
+            if err is None:  # Success
+                return lon, lat, err, fixed_addr
+
+        # Fallback 3: Try city only (no street, no country)
+        if city:
+            lon, lat, err, fixed_addr = self.geocode(street=None, city=city, country=None, retries=retries)
+            if err is None:  # Success - found city coordinates but not street
+                return lon, lat, "street_not_found", fixed_addr
+
+        # Fallback 4: Try country only (no street, no city)
+        if country:
+            lon, lat, err, fixed_addr = self.geocode(street=None, city=None, country=country, retries=retries)
+            if err is None:  # Success - found country coordinates but not city
+                return lon, lat, "city_not_found", fixed_addr
+
+        # All fallbacks failed, return null coordinates
+        original_parts = [p for p in (country, city, street) if p and p.strip()]
+        original_fixed = ", ".join(original_parts) if original_parts else None
+        return None, None, "country_not_found", original_fixed
 
 
 # ----------------------------
@@ -134,10 +212,10 @@ def main():
                     help="Input XLSX file path")
     ap.add_argument("--sheet", default='Sheet1', help="Optional sheet name (defaults to first)")
     ap.add_argument("--out",  
-                    default="/Users/amirdaygmail.com/projects/Neighborhood_Insights/data/processed/mosdot_4.csv", 
+                    default="/Users/amirdaygmail.com/projects/Neighborhood_Insights/data/processed/mosdot_5.csv", 
                     help="Output CSV path (also used as cache on re-runs)")
     ap.add_argument("--sleep", type=float, default=1.1, help="Seconds between requests (>=1.0 for public Nominatim)")
-    ap.add_argument("--country", default="Israel", help="Country appended to the address key")
+    ap.add_argument("--country", default="ישראל", help="Country appended to the address key")
     ap.add_argument("--checkpoint-every", type=int, default=50, help="Write CSV every N newly geocoded addresses")
     ap.add_argument("--max-rows", type=int, default=None, help="Optional limit on number of input rows to process")
     args = ap.parse_args()
@@ -158,9 +236,9 @@ def main():
         df_out = pd.read_csv(args.out, dtype=str, encoding="utf-8-sig")
     else:
         df_out = df_in.copy()
-        for c in ["lon", "lat", "geocode_error"]:
-            if c not in df_out.columns:
-                df_out[c] = None
+    for c in ["lon", "lat", "geocode_error", "fixed_address"]:
+        if c not in df_out.columns:
+            df_out[c] = None
 
     # Build address_key for all rows
     addr_keys = (
@@ -173,37 +251,53 @@ def main():
 
     # Deduplicate within this run to avoid double requests
     client = NominatimClient(min_interval_s=args.sleep)
-    
-    pbar = tqdm(df_out['lat'].isna().sum(), desc="Geocoding (CSV cache)", unit="addr")
+
+    total_to_geocode = df_out['lat'].isna().sum()
+    pbar = tqdm(total=total_to_geocode, desc="Geocoding", unit="addr")
     df_out = df_out.reset_index(drop=True)
     updates_count = 0
+    processed_count = 0
+
     for idx in df_out.index:
         row = df_out.loc[idx]
         if pd.notna(row.get("lon")) and pd.notna(row.get("lat")):
-            pbar.update(1)
             continue
+
+        processed_count += 1
         updates_count += 1
         df_out.at[idx, "geocode_error"] = "no_address"
-        city = row["יישוב"] 
+        city = row["יישוב"]
         street = row["כתובת"]
+
         if not city or not street:
             print(f"Row {idx}: Missing both כתובת and יישוב; skipping.")
             pbar.update(1)
             continue
-        if city == street:
-            street = ""
-        lon, lat, err = client.geocode(street=street, city=city, country=args.country)
+
+        # Update progress bar description with current address
+        current_address = f"{street}, {city}" if street else city
+        pbar.set_description(f"Geocoding: {current_address[:50][::-1]}... ({processed_count}/{total_to_geocode})")
+
+        lon, lat, err, fixed_addr = client.geocode_with_fallback(street=street, city=city, country=args.country)
         if err:
             print(f"Row {idx}: Geocode error '{err}' for '{street[::-1]}, {city[::-1]}'")
+            df_out.at[idx, "geocode_error"] = err
+            if fixed_addr:
+                df_out.at[idx, "fixed_address"] = fixed_addr
             pbar.update(1)
             continue
+
         sub = df_out["__address_key"] == row["__address_key"]
         df_out.loc[sub, "lon"] = lon
         df_out.loc[sub, "lat"] = lat
+        df_out.loc[sub, "fixed_address"] = fixed_addr
         pbar.update(sub.sum())
+
         if updates_count >= args.checkpoint_every:
             atomic_write_csv(df_out, args.out)
             updates_count = 0
+
+    pbar.close()
 
     print(f"Done. Wrote CSV cache: {args.out}")
 
