@@ -180,23 +180,30 @@ def main():
     for idx in df_out.index:
         row = df_out.loc[idx]
         if pd.notna(row.get("lon")) and pd.notna(row.get("lat")):
+            pbar.update(1)
             continue
-        if not row["__address_key"]:
-            updates_count += 1
-            df_out.at[idx, "geocode_error"] = "no_address"
-            city = row["יישוב"] 
-            street = row["כתובת"]
-            if not city or not street:
-                print(f"Row {idx}: Missing both כתובת and יישוב; skipping.")
-                continue
-            lon, lat, err = client.geocode(street=street, city=city, country=args.country)
-            sub = df_out["__address_key"] == row["__address_key"]
-            df_out.loc[sub, "lon"] = lon
-            df_out.loc[sub, "lat"] = lat
-            pbar.update(sub.sum())
-            if updates_count >= args.checkpoint_every:
-                atomic_write_csv(df_out, args.out)
-                updates_count = 0
+        updates_count += 1
+        df_out.at[idx, "geocode_error"] = "no_address"
+        city = row["יישוב"] 
+        street = row["כתובת"]
+        if not city or not street:
+            print(f"Row {idx}: Missing both כתובת and יישוב; skipping.")
+            pbar.update(1)
+            continue
+        if city == street:
+            street = ""
+        lon, lat, err = client.geocode(street=street, city=city, country=args.country)
+        if err:
+            print(f"Row {idx}: Geocode error '{err}' for '{street[::-1]}, {city[::-1]}'")
+            pbar.update(1)
+            continue
+        sub = df_out["__address_key"] == row["__address_key"]
+        df_out.loc[sub, "lon"] = lon
+        df_out.loc[sub, "lat"] = lat
+        pbar.update(sub.sum())
+        if updates_count >= args.checkpoint_every:
+            atomic_write_csv(df_out, args.out)
+            updates_count = 0
 
     print(f"Done. Wrote CSV cache: {args.out}")
 
