@@ -24,6 +24,7 @@ interface JobCenter {
   latitude: number;
 }
 
+
 export default function Home() {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -32,11 +33,42 @@ export default function Home() {
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [mapReady, setMapReady] = useState(false);
-  const [showStatisticalAreas, setShowStatisticalAreas] = useState(false);
+  const [showStatisticalAreas, setShowStatisticalAreas] = useState(true);
   const [statisticalAreasLoading, setStatisticalAreasLoading] = useState(false);
   const [jobCenters, setJobCenters] = useState<JobCenter[]>([]);
   const [showJobCenters, setShowJobCenters] = useState(false);
   const [jobCentersLoading, setJobCentersLoading] = useState(false);
+  const [selectedJobCenter, setSelectedJobCenter] = useState<JobCenter | null>(null);
+  const [distanceCalculationEnabled, setDistanceCalculationEnabled] = useState(false);
+  const [averageDrivingSpeed, setAverageDrivingSpeed] = useState(40); // km/h
+  const [drivingTimeThreshold, setDrivingTimeThreshold] = useState(30); // minutes
+
+
+  // Distance calculation function
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a =
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
+
+  // Calculate driving time in minutes
+  const calculateDrivingTime = (distanceKm: number, speedKmh: number): number => {
+    return (distanceKm / speedKmh) * 60; // Convert hours to minutes
+  };
+
+  // Get color based on distance
+  const getDistanceColor = (distance: number, maxDistance: number): string => {
+    const ratio = distance / maxDistance;
+    if (ratio < 0.33) return '#10B981'; // Green for short distances
+    if (ratio < 0.67) return '#F59E0B'; // Orange for medium distances
+    return '#EF4444'; // Red for long distances
+  };
 
   // Fetch POI data from backend only when map is ready
   useEffect(() => {
@@ -137,10 +169,11 @@ export default function Home() {
             throw new Error(`HTTP error! status: ${response.status}`);
           }
           const geojsonData = await response.json();
-          console.log('Statistical areas loaded:', geojsonData);
+          console.log('Statistical areas loaded:', geojsonData.features.length, 'features');
 
           // Add source if it doesn't exist
           if (!currentMap.getSource('statistical-areas')) {
+            console.log('Adding statistical areas source and layers...');
             currentMap.addSource('statistical-areas', {
               type: 'geojson',
               data: geojsonData
@@ -158,15 +191,17 @@ export default function Home() {
               }
             });
 
-            // Add fill layer (areas) with low opacity
+            // Add fill layer (areas) with default blue coloring initially
+            const fillPaint = {
+              'fill-color': '#3B82F6',
+              'fill-opacity': 0.3
+            };
+
             currentMap.addLayer({
               id: 'statistical-areas-fill',
               type: 'fill',
               source: 'statistical-areas',
-              paint: {
-                'fill-color': '#3B82F6',
-                'fill-opacity': 0.1
-              }
+              paint: fillPaint
             }, 'statistical-areas-boundaries'); // Add below boundary layer
 
             // Add a highlighted fill layer for hover effects
@@ -191,6 +226,8 @@ export default function Home() {
 
               // Define display order and Hebrew names
               const hebrewFieldMap = [
+                { key: 'distance_km', name: 'מרחק ממוקד התעסוקה', priority: 0, suffix: ' ק"מ' },
+                { key: 'driving_time_minutes', name: 'זמן נסיעה משוער', priority: 1, suffix: ' דקות' },
                 { key: 'שם_יישוב', name: 'שם יישוב', priority: 1 },
                 { key: 'שם_יישוב_אנגלית', name: 'שם יישוב באנגלית', priority: 2 },
                 { key: 'סוג_יישוב', name: 'סוג יישוב', priority: 3 },
@@ -237,6 +274,15 @@ export default function Home() {
               // Get main title
               const mainTitle = props['שם_יישוב'] || props['SHEM_YISHU'] || props['SHEM_YIS_1'] || 'אזור סטטיסטי';
 
+              // Get distance and driving time information if available
+              const distanceInfo = props['distance_km'] ? `
+                <div style="background:linear-gradient(135deg,#F59E0B,#D97706);color:white;padding:12px;border-radius:12px;margin:16px 0;text-align:center;box-shadow:0 4px 12px rgba(245,158,11,0.3)">
+                  <div style="font-size:14px;font-weight:600;margin-bottom:4px">מרחק ממוקד התעסוקה הנבחר</div>
+                  <div style="font-size:24px;font-weight:800">${props['distance_km']} ק"מ</div>
+                  ${props['driving_time_minutes'] ? `<div style="font-size:18px;font-weight:600;margin-top:6px;color:#FEF3C7">${props['driving_time_minutes']} דקות נסיעה</div>` : ''}
+                  ${props['distance_ratio'] ? `<div style="font-size:12px;opacity:0.9;margin-top:2px">יחס: ${(props['distance_ratio'] * 100).toFixed(1)}%</div>` : ''}
+                </div>` : '';
+
               // Create popup content
               const popupContent = `
                 <div dir="rtl" style="font-family:Arial,sans-serif;min-width:420px;max-width:500px;direction:rtl;padding:4px">
@@ -248,7 +294,9 @@ export default function Home() {
                   <div style="font-size:22px;font-weight:800;color:#111827;line-height:1.2;margin-bottom:8px;text-align:right">
                     ${mainTitle}
                   </div>
-                  ${props['שם_יישוב_אנגלית'] ? `<div style="font-size:16px;color:#6B7280;margin-bottom:20px;text-align:right;font-weight:600">${props['שם_יישוב_אנגלית']}</div>` : ''}
+                  ${props['שם_יישוב_אנגלית'] ? `<div style="font-size:16px;color:#6B7280;margin-bottom:12px;text-align:right;font-weight:600">${props['שם_יישוב_אנגלית']}</div>` : ''}
+
+                  ${distanceInfo}
 
                   <div style="margin-bottom:20px;background:#F9FAFB;padding:12px;border-radius:12px">
                     ${displayProps.map(item => `
@@ -320,6 +368,120 @@ export default function Home() {
             (currentMap.getSource('statistical-areas') as mapboxgl.GeoJSONSource).setData(geojsonData);
           }
 
+          // Apply distance-based coloring if a job center is selected
+          if (selectedJobCenter && distanceCalculationEnabled) {
+            console.log('Applying distance calculation from', selectedJobCenter.name_he);
+
+            // Calculate distances and store directly on features
+            const allDistances: number[] = [];
+
+            // Single pass: calculate distances and store on each feature
+            geojsonData.features.forEach((feature: any) => {
+              if (feature.geometry.type === 'Polygon' || feature.geometry.type === 'MultiPolygon') {
+                // Get the main polygon coordinates
+                const coordinates = feature.geometry.type === 'Polygon'
+                  ? feature.geometry.coordinates[0]
+                  : feature.geometry.coordinates[0][0]; // First polygon of MultiPolygon
+
+                // Calculate proper centroid using coordinate averaging
+                let sumLat = 0, sumLng = 0, pointCount = 0;
+
+                coordinates.forEach((coord: number[]) => {
+                  if (coord && coord.length >= 2 && !isNaN(coord[0]) && !isNaN(coord[1])) {
+                    sumLng += coord[0];
+                    sumLat += coord[1];
+                    pointCount++;
+                  }
+                });
+
+                if (pointCount > 0) {
+                  const centerLat = sumLat / pointCount;
+                  const centerLng = sumLng / pointCount;
+
+                  const distance = calculateDistance(
+                    selectedJobCenter.latitude,
+                    selectedJobCenter.longitude,
+                    centerLat,
+                    centerLng
+                  );
+
+                  if (!isNaN(distance) && isFinite(distance)) {
+                    const drivingTime = calculateDrivingTime(distance, averageDrivingSpeed);
+                    feature.properties.distance_km = Math.round(distance * 100) / 100; // Round to 2 decimal places
+                    feature.properties.driving_time_minutes = Math.round(drivingTime * 10) / 10; // Round to 1 decimal place
+                    feature.properties.is_within_threshold = drivingTime <= drivingTimeThreshold;
+                    allDistances.push(distance);
+                  } else {
+                    feature.properties.distance_km = null;
+                    feature.properties.driving_time_minutes = null;
+                    feature.properties.is_within_threshold = false;
+                  }
+                } else {
+                  feature.properties.distance_km = null;
+                  feature.properties.driving_time_minutes = null;
+                  feature.properties.is_within_threshold = false;
+                }
+              } else {
+                feature.properties.distance_km = null;
+                feature.properties.driving_time_minutes = null;
+                feature.properties.is_within_threshold = false;
+              }
+            });
+
+            // Find max distance and calculate ratios
+            const maxDistance = allDistances.length > 0 ? Math.max(...allDistances) : 1;
+
+            // Add distance ratios
+            geojsonData.features.forEach((feature: any) => {
+              if (feature.properties.distance_km !== null) {
+                feature.properties.distance_ratio = feature.properties.distance_km / maxDistance;
+              } else {
+                feature.properties.distance_ratio = null;
+              }
+            });
+
+            console.log(`Processed ${allDistances.length} features with distances. Max distance: ${maxDistance.toFixed(2)}km`);
+
+            // Update the source with distance data
+            (currentMap.getSource('statistical-areas') as mapboxgl.GeoJSONSource).setData(geojsonData);
+
+            // Apply distance-based coloring with time threshold filtering
+            currentMap.setPaintProperty('statistical-areas-fill', 'fill-color', [
+              'case',
+              ['all',
+                ['has', 'distance_ratio'],
+                ['!=', ['get', 'distance_ratio'], null],
+                ['get', 'is_within_threshold']  // Only show areas within driving time threshold
+              ],
+              [
+                'case',
+                ['<', ['number', ['get', 'distance_ratio']], 0.33],
+                ['rgba', 16, 185, 129, 1], // Green for short distances (0-33%)
+                ['<', ['number', ['get', 'distance_ratio']], 0.67],
+                ['rgba', 245, 158, 11, 1], // Orange for medium distances (33-67%)
+                ['rgba', 239, 68, 68, 1]  // Red for long distances (67-100%)
+              ],
+              ['rgba', 0, 0, 0, 0] // Transparent for areas outside threshold or without valid distance
+            ]);
+
+            // Also hide the fill opacity for areas outside threshold
+            currentMap.setPaintProperty('statistical-areas-fill', 'fill-opacity', [
+              'case',
+              ['all',
+                ['has', 'is_within_threshold'],
+                ['get', 'is_within_threshold']
+              ],
+              0.3, // Normal opacity for areas within threshold
+              0    // Fully transparent for areas outside threshold
+            ]);
+
+            console.log(`Applied distance coloring. Max distance: ${Math.round(maxDistance)} km`);
+          } else {
+            // Reset to default blue coloring
+            currentMap.setPaintProperty('statistical-areas-fill', 'fill-color', '#3B82F6');
+            console.log('Reset to default blue coloring');
+          }
+
           // Show the layers
           currentMap.setLayoutProperty('statistical-areas-boundaries', 'visibility', 'visible');
           currentMap.setLayoutProperty('statistical-areas-fill', 'visibility', 'visible');
@@ -345,7 +507,7 @@ export default function Home() {
     };
 
     loadStatisticalAreas();
-  }, [showStatisticalAreas, mapReady]);
+  }, [showStatisticalAreas, mapReady, selectedJobCenter, distanceCalculationEnabled, averageDrivingSpeed, drivingTimeThreshold]);
 
   // Handle job centers toggle
   useEffect(() => {
@@ -495,6 +657,21 @@ export default function Home() {
       loadJobCenters();
     }
   }, [showJobCenters, mapReady, jobCenters]);
+
+
+  // Reset statistical areas coloring when distance calculation is disabled
+  useEffect(() => {
+    if (!map.current || !mapReady) return;
+
+    const currentMap = map.current;
+
+    if (!distanceCalculationEnabled && currentMap.getLayer('statistical-areas-fill')) {
+      // Reset to default coloring
+      currentMap.setPaintProperty('statistical-areas-fill', 'fill-color', '#3B82F6');
+      currentMap.setPaintProperty('statistical-areas-fill', 'fill-opacity', 0.3);
+      console.log('Reset statistical areas to default coloring');
+    }
+  }, [distanceCalculationEnabled, mapReady]);
 
   // Initialize map
   useEffect(() => {
@@ -804,6 +981,132 @@ export default function Home() {
               </p>
             </div>
           </label>
+        </div>
+
+        {/* Distance Calculation Section */}
+        <div className="mt-6 pt-4 border-t border-gray-200">
+          <h3 className="text-sm font-semibold text-gray-900 mb-3">Distance Analysis</h3>
+
+          {/* Job Center Dropdown */}
+          <div className="mb-4">
+            <label className="block text-xs font-medium text-gray-700 mb-2">
+              Select Job Center (מוקד תעסוקה)
+            </label>
+            <select
+              value={selectedJobCenter?.id || ''}
+              onChange={(e) => {
+                const jobCenter = jobCenters.find(center => center.id === parseInt(e.target.value));
+                setSelectedJobCenter(jobCenter || null);
+              }}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">Choose a job center...</option>
+              {jobCenters.map(jobCenter => (
+                <option key={jobCenter.id} value={jobCenter.id}>
+                  {jobCenter.name_he} ({jobCenter.estimated_employees.toLocaleString()} employees)
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Enable Distance Calculation Toggle */}
+          {selectedJobCenter && (
+            <label className="flex items-center space-x-3 cursor-pointer group">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  checked={distanceCalculationEnabled}
+                  onChange={(e) => setDistanceCalculationEnabled(e.target.checked)}
+                  className="sr-only"
+                />
+                <div className={`w-5 h-5 rounded border-2 ${
+                  distanceCalculationEnabled
+                    ? 'bg-blue-600 border-blue-600'
+                    : 'border-gray-300 group-hover:border-blue-400'
+                }`}>
+                  {distanceCalculationEnabled && (
+                    <svg className="w-3 h-3 text-white m-0.5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-900">
+                    Color by Distance
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Color areas by distance from {selectedJobCenter.name_he}
+                </p>
+              </div>
+            </label>
+          )}
+
+          {/* Distance Legend */}
+          {distanceCalculationEnabled && selectedJobCenter && (
+            <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+              <div className="text-xs font-medium text-gray-700 mb-2">Distance Legend</div>
+              <div className="space-y-1">
+                <div className="flex items-center space-x-2">
+                  <div className="w-4 h-4 rounded" style={{ backgroundColor: '#10B981' }}></div>
+                  <span className="text-xs text-gray-600">Close (0-33%)</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className="w-4 h-4 rounded" style={{ backgroundColor: '#F59E0B' }}></div>
+                  <span className="text-xs text-gray-600">Medium (33-67%)</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className="w-4 h-4 rounded" style={{ backgroundColor: '#EF4444' }}></div>
+                  <span className="text-xs text-gray-600">Far (67-100%)</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Driving Time Controls */}
+          {distanceCalculationEnabled && selectedJobCenter && (
+            <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="text-xs font-semibold text-gray-900 mb-3">Driving Time Settings</div>
+
+              {/* Average Driving Speed */}
+              <div className="mb-3">
+                <label className="block text-xs font-medium text-gray-800 mb-1">
+                  Average Speed (km/h)
+                </label>
+                <input
+                  type="number"
+                  min="10"
+                  max="120"
+                  step="5"
+                  value={averageDrivingSpeed}
+                  onChange={(e) => setAverageDrivingSpeed(parseInt(e.target.value) || 40)}
+                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                />
+              </div>
+
+              {/* Driving Time Threshold */}
+              <div>
+                <label className="block text-xs font-medium text-gray-800 mb-1">
+                  Time Threshold (minutes)
+                </label>
+                <input
+                  type="number"
+                  min="5"
+                  max="120"
+                  step="5"
+                  value={drivingTimeThreshold}
+                  onChange={(e) => setDrivingTimeThreshold(parseInt(e.target.value) || 30)}
+                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                />
+                <p className="text-xs text-gray-700 mt-1">
+                  Only show areas within {drivingTimeThreshold} minutes drive
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Quick Actions */}
