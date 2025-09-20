@@ -13,6 +13,17 @@ interface POI {
   latitude: number;
 }
 
+interface JobCenter {
+  id: number;
+  name_he: string;
+  name_en: string;
+  address: string;
+  estimated_employees: number;
+  type: string;
+  longitude: number;
+  latitude: number;
+}
+
 export default function Home() {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -23,6 +34,9 @@ export default function Home() {
   const [mapReady, setMapReady] = useState(false);
   const [showStatisticalAreas, setShowStatisticalAreas] = useState(false);
   const [statisticalAreasLoading, setStatisticalAreasLoading] = useState(false);
+  const [jobCenters, setJobCenters] = useState<JobCenter[]>([]);
+  const [showJobCenters, setShowJobCenters] = useState(false);
+  const [jobCentersLoading, setJobCentersLoading] = useState(false);
 
   // Fetch POI data from backend only when map is ready
   useEffect(() => {
@@ -80,6 +94,32 @@ export default function Home() {
     };
 
     fetchPOIs();
+  }, [mapReady]);
+
+  // Fetch job centers data when map is ready
+  useEffect(() => {
+    if (!mapReady) return;
+
+    const fetchJobCenters = async () => {
+      try {
+        console.log('Fetching job centers...');
+        const response = await fetch('http://localhost:8001/job-centers');
+        const data = await response.json();
+        console.log('Job centers data:', data);
+
+        if (!data.job_centers || !Array.isArray(data.job_centers)) {
+          console.error('No job centers data received from API');
+          return;
+        }
+
+        setJobCenters(data.job_centers);
+        console.log('Loaded job centers:', data.job_centers.length);
+      } catch (error) {
+        console.error('Error fetching job centers:', error);
+      }
+    };
+
+    fetchJobCenters();
   }, [mapReady]);
 
   // Handle statistical areas toggle
@@ -307,6 +347,155 @@ export default function Home() {
     loadStatisticalAreas();
   }, [showStatisticalAreas, mapReady]);
 
+  // Handle job centers toggle
+  useEffect(() => {
+    if (!map.current || !mapReady) return;
+    const currentMap = map.current;
+
+    const loadJobCenters = async () => {
+      if (showJobCenters) {
+        setJobCentersLoading(true);
+        try {
+          console.log('Loading job centers to map...');
+
+          // Add source if it doesn't exist
+          if (!currentMap.getSource('job-centers')) {
+            const features = jobCenters.map(center => ({
+              type: 'Feature' as const,
+              properties: {
+                id: center.id,
+                name_he: center.name_he,
+                name_en: center.name_en,
+                address: center.address,
+                estimated_employees: center.estimated_employees,
+                type: center.type
+              },
+              geometry: {
+                type: 'Point' as const,
+                coordinates: [center.longitude, center.latitude]
+              }
+            }));
+
+            currentMap.addSource('job-centers', {
+              type: 'geojson',
+              data: {
+                type: 'FeatureCollection',
+                features: features
+              }
+            });
+
+            // Add job centers layer with building icon
+            currentMap.addLayer({
+              id: 'job-centers-layer',
+              type: 'circle',
+              source: 'job-centers',
+              paint: {
+                'circle-radius': 8,
+                'circle-stroke-width': 2,
+                'circle-stroke-color': '#ffffff',
+                'circle-color': '#DC2626'  // Red color for job centers
+              }
+            });
+
+            console.log('Added job centers layers to map');
+
+            // Add click handler for job centers
+            currentMap.on('click', 'job-centers-layer', (e) => {
+              const f = e.features && e.features[0];
+              if (!f) return;
+
+              const props: any = f.properties || {};
+              const coord = (f.geometry as any).coordinates;
+
+              const popupContent = `
+                <div dir="rtl" style="font-family:Arial,sans-serif;min-width:300px;direction:rtl;padding:8px">
+                  <div style="display:flex;align-items:center;margin-bottom:12px;justify-content:space-between">
+                    <span style="font-size:12px;color:#DC2626;background:#FEF2F2;padding:4px 8px;border-radius:12px;font-weight:700">מוקד תעסוקה</span>
+                  </div>
+
+                  <div style="font-size:18px;font-weight:800;color:#111827;line-height:1.2;margin-bottom:8px;text-align:right">
+                    ${props.name_he || 'מוקד תעסוקה'}
+                  </div>
+
+                  <div style="font-size:14px;color:#6B7280;margin-bottom:12px;text-align:right;">
+                    ${props.address || ''}
+                  </div>
+
+                  <div style="margin-bottom:12px;background:#F9FAFB;padding:8px;border-radius:8px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0">
+                      <span style="font-size:14px;color:#374151;font-weight:700;text-align:right">מספר מועסקים (הערכה)</span>
+                      <span style="font-size:14px;color:#111827;font-weight:800;text-align:left">${props.estimated_employees?.toLocaleString() || 'לא ידוע'}</span>
+                    </div>
+                  </div>
+
+                  <div style="display:flex;gap:8px;margin-top:12px">
+                    <a href="https://www.google.com/maps?q=${coord[1]},${coord[0]}" target="_blank" rel="noopener noreferrer"
+                       style="display:inline-block;font-size:12px;background:#DC2626;color:white;padding:8px 12px;border-radius:8px;text-decoration:none;flex:1;text-align:center;font-weight:700">מפות גוגל</a>
+                    <a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${coord[1]},${coord[0]}" target="_blank" rel="noopener noreferrer"
+                       style="display:inline-block;font-size:12px;background:#059669;color:white;padding:8px 12px;border-radius:8px;text-decoration:none;flex:1;text-align:center;font-weight:700">תצוגת רחוב</a>
+                  </div>
+                </div>
+              `;
+
+              new mapboxgl.Popup({ closeButton: true, offset: 15 })
+                .setLngLat(coord)
+                .setHTML(popupContent)
+                .addTo(currentMap);
+            });
+
+            // Change cursor on hover
+            currentMap.on('mouseenter', 'job-centers-layer', () => {
+              currentMap.getCanvas().style.cursor = 'pointer';
+            });
+
+            currentMap.on('mouseleave', 'job-centers-layer', () => {
+              currentMap.getCanvas().style.cursor = '';
+            });
+          } else {
+            // Update existing source
+            const features = jobCenters.map(center => ({
+              type: 'Feature' as const,
+              properties: {
+                id: center.id,
+                name_he: center.name_he,
+                name_en: center.name_en,
+                address: center.address,
+                estimated_employees: center.estimated_employees,
+                type: center.type
+              },
+              geometry: {
+                type: 'Point' as const,
+                coordinates: [center.longitude, center.latitude]
+              }
+            }));
+
+            (currentMap.getSource('job-centers') as mapboxgl.GeoJSONSource).setData({
+              type: 'FeatureCollection',
+              features: features
+            });
+          }
+
+          // Show the layer
+          currentMap.setLayoutProperty('job-centers-layer', 'visibility', 'visible');
+
+        } catch (error) {
+          console.error('Error loading job centers:', error);
+        } finally {
+          setJobCentersLoading(false);
+        }
+      } else {
+        // Hide the layer
+        if (currentMap.getLayer('job-centers-layer')) {
+          currentMap.setLayoutProperty('job-centers-layer', 'visibility', 'none');
+        }
+      }
+    };
+
+    if (jobCenters.length > 0) {
+      loadJobCenters();
+    }
+  }, [showJobCenters, mapReady, jobCenters]);
+
   // Initialize map
   useEffect(() => {
     if (map.current) return;
@@ -442,6 +631,7 @@ export default function Home() {
       kindergartens: '#10B981', // Green
       clinics: '#EF4444',      // Red
       bus_stops: '#F59E0B',    // Orange
+      job_center: '#DC2626',   // Red for job centers
     };
     return colors[type] || '#6B7280';
   };
@@ -569,6 +759,48 @@ export default function Home() {
               </div>
               <p className="text-xs text-gray-500 mt-1">
                 Show statistical area boundaries
+              </p>
+            </div>
+          </label>
+
+          {/* Job Centers Toggle */}
+          <label className="flex items-center space-x-3 cursor-pointer group mt-4">
+            <div className="relative">
+              <input
+                type="checkbox"
+                checked={showJobCenters}
+                onChange={(e) => setShowJobCenters(e.target.checked)}
+                className="sr-only"
+              />
+              <div className={`w-5 h-5 rounded border-2 ${
+                showJobCenters
+                  ? 'bg-blue-600 border-blue-600'
+                  : 'border-gray-300 group-hover:border-blue-400'
+              }`}>
+                {showJobCenters && (
+                  <svg className="w-3 h-3 text-white m-0.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                )}
+              </div>
+            </div>
+
+            <div
+              className="w-4 h-4 rounded border-2 border-white shadow-md"
+              style={{ backgroundColor: '#DC2626' }}
+            />
+
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-900">
+                  Job Centers
+                </span>
+                {jobCentersLoading && (
+                  <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Show major employment centers ({jobCenters.length})
               </p>
             </div>
           </label>

@@ -170,16 +170,53 @@ def load_statistical_areas():
 
     return areas_data
 
-# Load data on startup (mosdot only)
+def load_job_centers():
+    """Load job centers data from processed files."""
+
+    parquet_path = PROCESSED_PATH / "job_centers.parquet"
+    metadata_path = PROCESSED_PATH / "job_centers_metadata.json"
+
+    job_centers_data = {}
+
+    # Load metadata if available
+    if metadata_path.exists():
+        try:
+            with open(metadata_path, 'r', encoding='utf-8') as f:
+                job_centers_data['metadata'] = json.load(f)
+        except Exception as e:
+            print(f"Error loading job centers metadata: {e}")
+            job_centers_data['metadata'] = {}
+
+    # Load the actual data
+    if parquet_path.exists():
+        try:
+            df = pd.read_parquet(parquet_path)
+            job_centers_data['data'] = df.to_dict('records')
+            job_centers_data['total'] = len(df)
+            print(f"Loaded {len(df)} job centers from parquet")
+        except Exception as e:
+            print(f"Error loading job centers parquet: {e}")
+            job_centers_data['data'] = []
+            job_centers_data['total'] = 0
+    else:
+        print(f"Job centers parquet not found at {parquet_path}")
+        job_centers_data['data'] = []
+        job_centers_data['total'] = 0
+
+    return job_centers_data
+
+# Load data on startup
 pois_data = load_mosdot_data()
 statistical_areas = load_statistical_areas()
+job_centers = load_job_centers()
 
 @app.get("/")
 def read_root():
     return {
         "message": "Neighborhood Insights API",
         "total_pois": len(pois_data),
-        "total_statistical_areas": statistical_areas.get('total', 0)
+        "total_statistical_areas": statistical_areas.get('total', 0),
+        "total_job_centers": job_centers.get('total', 0)
     }
 
 @app.get("/pois")
@@ -416,6 +453,75 @@ def search_statistical_areas(
 
     else:
         return {"error": "Provide either lat/lon for point search or bounds for area search"}
+
+# Job Centers Endpoints
+
+@app.get("/job-centers/info")
+def get_job_centers_info():
+    """Get information about job centers data."""
+    return {
+        "total_job_centers": job_centers.get('total', 0),
+        "metadata": job_centers.get('metadata', {}),
+        "data_available": len(job_centers.get('data', [])) > 0
+    }
+
+@app.get("/job-centers")
+def get_all_job_centers(limit: Optional[int] = None):
+    """Get all job centers, optionally limited."""
+    job_centers_data = job_centers.get('data', [])
+
+    if limit:
+        job_centers_data = job_centers_data[:limit]
+
+    return {
+        "job_centers": job_centers_data,
+        "total": len(job_centers_data),
+        "metadata": job_centers.get('metadata', {})
+    }
+
+@app.get("/job-centers/{center_id}")
+def get_job_center_by_id(center_id: int):
+    """Get a specific job center by ID."""
+    job_centers_data = job_centers.get('data', [])
+    center = next((c for c in job_centers_data if c.get('id') == center_id), None)
+    if not center:
+        return {"error": "Job center not found"}
+    return center
+
+@app.get("/job-centers/near")
+def get_job_centers_near(lat: float, lon: float, radius_km: float = 10.0):
+    """Get job centers within a certain radius of a point."""
+    import math
+
+    def calculate_distance(lat1, lon1, lat2, lon2):
+        # Simple Haversine formula
+        R = 6371  # Earth's radius in km
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+        a = math.sin(dlat/2) * math.sin(dlat/2) + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2) * math.sin(dlon/2)
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+        return R * c
+
+    nearby_centers = []
+    job_centers_data = job_centers.get('data', [])
+
+    for center in job_centers_data:
+        if center.get('latitude') and center.get('longitude'):
+            distance = calculate_distance(lat, lon, center['latitude'], center['longitude'])
+            if distance <= radius_km:
+                center_with_distance = center.copy()
+                center_with_distance['distance_km'] = round(distance, 2)
+                nearby_centers.append(center_with_distance)
+
+    # Sort by distance
+    nearby_centers.sort(key=lambda x: x['distance_km'])
+
+    return {
+        "job_centers": nearby_centers,
+        "total": len(nearby_centers),
+        "search_center": {"latitude": lat, "longitude": lon},
+        "radius_km": radius_km
+    }
 
 if __name__ == "__main__":
     import uvicorn
