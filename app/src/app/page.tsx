@@ -199,35 +199,36 @@ export default function Home() {
 
               // Create popup content
               const popupContent = `
-                <div dir="rtl" style="font-family:Arial,sans-serif;min-width:320px;max-width:400px;direction:rtl">
-                  <div style="display:flex;align-items:center;margin-bottom:10px;justify-content:space-between">
-                    <span style="font-size:11px;color:#0369A1;background:#E0F2FE;padding:3px 8px;border-radius:12px;font-weight:600">אזור סטטיסטי</span>
-                    ${props['אזור_גיאוגרפי'] ? `<span style="font-size:11px;color:#059669;background:#ECFDF5;padding:3px 8px;border-radius:12px;font-weight:600">${props['אזור_גיאוגרפי']}</span>` : ''}
+                <div dir="rtl" style="font-family:Arial,sans-serif;min-width:420px;max-width:500px;direction:rtl;padding:4px">
+                  <div style="display:flex;align-items:center;margin-bottom:16px;justify-content:space-between">
+                    <span style="font-size:13px;color:#0369A1;background:#E0F2FE;padding:6px 12px;border-radius:16px;font-weight:700">אזור סטטיסטי</span>
+                    ${props['אזור_גיאוגרפי'] ? `<span style="font-size:13px;color:#059669;background:#ECFDF5;padding:6px 12px;border-radius:16px;font-weight:700">${props['אזור_גיאוגרפי']}</span>` : ''}
                   </div>
-                  <div style="font-size:18px;font-weight:700;color:#111827;line-height:1.3;margin-bottom:4px;text-align:right">
+
+                  <div style="font-size:22px;font-weight:800;color:#111827;line-height:1.2;margin-bottom:8px;text-align:right">
                     ${mainTitle}
                   </div>
-                  ${props['שם_יישוב_אנגלית'] ? `<div style="font-size:14px;color:#6B7280;margin-bottom:16px;text-align:right">${props['שם_יישוב_אנגלית']}</div>` : ''}
+                  ${props['שם_יישוב_אנגלית'] ? `<div style="font-size:16px;color:#6B7280;margin-bottom:20px;text-align:right;font-weight:600">${props['שם_יישוב_אנגלית']}</div>` : ''}
 
-                  <div style="margin-bottom:16px">
+                  <div style="margin-bottom:20px;background:#F9FAFB;padding:12px;border-radius:12px">
                     ${displayProps.map(item => `
-                      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #F3F4F6">
-                        <span style="font-size:13px;color:#374151;font-weight:600;text-align:right">${item.name}</span>
-                        <span style="font-size:13px;color:#111827;font-weight:700;text-align:left;margin-right:12px">${item.value}</span>
+                      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #E5E7EB;last-child:border-bottom:none">
+                        <span style="font-size:15px;color:#374151;font-weight:700;text-align:right">${item.name}</span>
+                        <span style="font-size:15px;color:#111827;font-weight:800;text-align:left;margin-right:16px;background:white;padding:4px 8px;border-radius:6px">${item.value}</span>
                       </div>
                     `).join('')}
                   </div>
 
-                  <div style="display:flex;gap:8px;margin-top:16px">
+                  <div style="display:flex;gap:12px;margin-top:20px">
                     <a href="https://www.google.com/maps?q=${coord.lat},${coord.lng}" target="_blank" rel="noopener noreferrer"
-                       style="display:inline-block;font-size:12px;background:#2563EB;color:white;padding:8px 12px;border-radius:8px;text-decoration:none;flex:1;text-align:center;font-weight:600">מפות גוגל</a>
+                       style="display:inline-block;font-size:14px;background:#2563EB;color:white;padding:12px 16px;border-radius:10px;text-decoration:none;flex:1;text-align:center;font-weight:700;transition:all 0.2s;box-shadow:0 2px 4px rgba(37,99,235,0.2)">מפות גוגל</a>
                     <a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${coord.lat},${coord.lng}" target="_blank" rel="noopener noreferrer"
-                       style="display:inline-block;font-size:12px;background:#059669;color:white;padding:8px 12px;border-radius:8px;text-decoration:none;flex:1;text-align:center;font-weight:600">תצוגת רחוב</a>
+                       style="display:inline-block;font-size:14px;background:#059669;color:white;padding:12px 16px;border-radius:10px;text-decoration:none;flex:1;text-align:center;font-weight:700;transition:all 0.2s;box-shadow:0 2px 4px rgba(5,150,105,0.2)">תצוגת רחוב</a>
                   </div>
                 </div>
               `;
 
-              new mapboxgl.Popup({ closeButton: true, offset: 15 })
+              new mapboxgl.Popup({ closeButton: true, offset: 15, maxWidth: '500px' })
                 .setLngLat(coord)
                 .setHTML(popupContent)
                 .addTo(currentMap);
