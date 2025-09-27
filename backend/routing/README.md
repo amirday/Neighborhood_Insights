@@ -1,9 +1,10 @@
-# Distance Calculator
+# Routing Module
 
-A robust distance calculation module for the Neighborhood Insights backend that provides accurate Haversine distance calculations between geographic coordinates.
+A comprehensive routing module for the Neighborhood Insights backend that provides both straight-line distance calculations and real-world routing with road snapping using OSRM.
 
 ## Features
 
+### Distance Calculator (Haversine)
 - **Multiple coordinate formats**: Support for tuples, dictionaries, and Coordinate objects
 - **Flexible distance calculations**: Calculate distances from one point to many points
 - **Nearest neighbor search**: Find closest coordinates with optional limits
@@ -11,8 +12,17 @@ A robust distance calculation module for the Neighborhood Insights backend that 
 - **Distance matrix**: Calculate distances between all pairs of coordinates
 - **Validated inputs**: Automatic validation of coordinate ranges
 
+### OSRM Router (Real Roads)
+- **Multiple transport modes**: Car, bicycle, and walking with different speeds
+- **Road snapping**: Routes follow actual roads and paths
+- **Batch processing**: Efficient calculation for multiple destinations
+- **Caching**: In-memory cache with TTL for performance
+- **Error handling**: Returns detailed error messages when OSRM unavailable
+- **Async support**: Concurrent requests for better performance
+
 ## Quick Start
 
+### Simple Distance (Haversine)
 ```python
 from routing.distance_calculator import calculate_distances_to_coordinates
 
@@ -28,7 +38,219 @@ for result in results:
     print(f"Distance: {result.distance_km:.2f} km")
 ```
 
-## Core Functions
+### Real-World Routing (OSRM)
+```python
+from routing.osrm_router import calculate_commute_time
+
+# Calculate real driving time
+tel_aviv = (32.0853, 34.7818)
+jerusalem = (31.7683, 35.2137)
+
+result = calculate_commute_time(tel_aviv, jerusalem, "driving")
+print(f"Driving time: {result.duration_minutes:.1f} minutes")
+print(f"Distance: {result.distance_km:.1f} km")
+```
+
+## OSRM Routing Functions
+
+### `calculate_commute_time(origin, destination, transport_mode="driving")`
+Calculate real-world commute time between two coordinates using OSRM.
+
+**Parameters:**
+- `origin`: Origin coordinate (lat, lon) tuple
+- `destination`: Destination coordinate (lat, lon) tuple
+- `transport_mode`: "driving", "cycling", or "walking"
+
+**Returns:** `RouteResult` object with duration, distance, and success status
+
+**Example:**
+```python
+from routing.osrm_router import calculate_commute_time
+
+tel_aviv = (32.0853, 34.7818)
+jerusalem = (31.7683, 35.2137)
+
+# Driving time
+result = calculate_commute_time(tel_aviv, jerusalem, "driving")
+print(f"Drive: {result.duration_minutes:.1f} min, {result.distance_km:.1f} km")
+
+# Cycling time
+result = calculate_commute_time(tel_aviv, jerusalem, "cycling")
+print(f"Bike: {result.duration_minutes:.1f} min")
+
+# Walking time
+result = calculate_commute_time(tel_aviv, jerusalem, "walking")
+print(f"Walk: {result.duration_minutes:.1f} min")
+```
+
+### `calculate_routes_optimized(origin, destinations, transport_mode="driving")`
+Efficiently calculate routes to multiple destinations with caching and batch processing.
+
+**Parameters:**
+- `origin`: Origin coordinate (lat, lon) tuple
+- `destinations`: List of destination coordinates
+- `transport_mode`: "driving", "cycling", or "walking"
+
+**Returns:** List of `RouteResult` objects
+
+**Example:**
+```python
+from routing.route_optimizer import calculate_routes_optimized
+
+tel_aviv = (32.0853, 34.7818)
+destinations = [
+    (31.7683, 35.2137),  # Jerusalem
+    (32.7940, 34.9896),  # Haifa
+    (31.2518, 34.7915),  # Beer Sheva
+]
+
+results = calculate_routes_optimized(tel_aviv, destinations, "driving")
+for i, result in enumerate(results):
+    print(f"To destination {i+1}: {result.duration_minutes:.1f} minutes")
+```
+
+### Transport Modes
+
+| Mode | Profile | Avg Speed | Max Distance | Description |
+|------|---------|-----------|--------------|-------------|
+| `driving` | Car/vehicle | 40 km/h | 500 km | Road routing for cars |
+| `cycling` | Bicycle | 15 km/h | 100 km | Bike-friendly paths |
+| `walking` | Pedestrian | 5 km/h | 25 km | Walkable routes |
+
+### RouteResult Object
+
+```python
+@dataclass
+class RouteResult:
+    duration_seconds: float      # Route time in seconds
+    duration_minutes: float      # Route time in minutes
+    distance_meters: float       # Route distance in meters
+    distance_km: float          # Route distance in kilometers
+    transport_mode: str         # Transport mode used
+    geometry: Optional[List]    # Route coordinates (if requested)
+    success: bool              # Whether calculation succeeded
+    error_message: Optional[str] # Error details if failed
+    used_fallback: bool        # Whether Haversine fallback was used
+```
+
+## Advanced Usage
+
+### Batch Processing with Caching
+```python
+from routing.route_optimizer import RouteBatchProcessor
+
+processor = RouteBatchProcessor(max_workers=10, use_async=True)
+
+# Process many destinations efficiently
+origin = (32.0853, 34.7818)
+many_destinations = [...]  # List of 100+ destinations
+
+results = processor.calculate_routes_batch(origin, many_destinations, "driving")
+
+# Check cache performance
+stats = processor.get_cache_stats()
+print(f"Cache size: {stats['cache_size']}")
+```
+
+### Distance Matrix
+```python
+from routing.route_optimizer import RouteBatchProcessor
+
+processor = RouteBatchProcessor()
+coordinates = [
+    (32.0853, 34.7818),  # Tel Aviv
+    (31.7683, 35.2137),  # Jerusalem
+    (32.7940, 34.9896),  # Haifa
+]
+
+# Calculate all-to-all distances
+matrix = processor.calculate_distance_matrix(coordinates, "driving")
+
+# matrix[i][j] is the route from coordinate i to coordinate j
+print(f"Tel Aviv to Jerusalem: {matrix[0][1].duration_minutes:.1f} minutes")
+```
+
+### Async Processing
+```python
+import asyncio
+from routing.route_optimizer import AsyncOSRMRouter
+
+async def calculate_async():
+    router = AsyncOSRMRouter()
+    origin = (32.0853, 34.7818)
+    destinations = [(31.7683, 35.2137), (32.7940, 34.9896)]
+
+    results = await router.calculate_routes_async(origin, destinations, "driving")
+    return results
+
+# Run async calculation
+results = asyncio.run(calculate_async())
+```
+
+### Error Handling and Fallback
+```python
+from routing.osrm_router import calculate_commute_time
+
+result = calculate_commute_time(origin, destination, "driving")
+
+if result.success:
+    if result.used_fallback:
+        print(f"Used fallback calculation: {result.duration_minutes:.1f} min")
+    else:
+        print(f"OSRM routing: {result.duration_minutes:.1f} min")
+else:
+    print(f"Routing failed: {result.error_message}")
+```
+
+## Configuration
+
+### OSRM Server Settings
+Edit `transport_modes.py` to configure OSRM server URLs:
+
+```python
+# Use local OSRM server
+OSRM_BASE_URL = "http://localhost:5000"
+
+# Or use different public server
+OSRM_BASE_URL = "https://your-osrm-server.com"
+```
+
+### Transport Mode Customization
+```python
+from routing.transport_modes import TransportModes
+
+# Access mode configurations
+driving_config = TransportModes.DRIVING
+print(f"Average speed: {driving_config.average_speed_kmh} km/h")
+
+# Check if mode is valid
+if TransportModes.is_valid_mode("driving"):
+    print("Valid transport mode")
+```
+
+### Cache Configuration
+```python
+from routing.route_optimizer import RouteCache
+
+# Custom cache with 2-hour TTL
+cache = RouteCache(ttl_seconds=7200)
+
+# Manual cache management
+cache.set("key", route_result)
+cached = cache.get("key")
+cache.cleanup_expired()
+cache.clear()
+```
+
+## Performance Notes
+
+- **OSRM API**: Uses public OSRM server with rate limits
+- **Caching**: Results cached for 1 hour by default
+- **Batch processing**: Concurrent requests for multiple destinations
+- **Error handling**: Returns detailed error messages when OSRM unavailable
+- **Async support**: Better performance for large batches (>5 destinations)
+
+## Distance Calculator (Legacy)
 
 ### `calculate_distances_to_coordinates(origin, coordinates)`
 Calculate distances from a single origin to multiple target coordinates.
