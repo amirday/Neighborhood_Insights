@@ -4,12 +4,20 @@ from fastapi.responses import FileResponse
 import csv
 import json
 from pathlib import Path
-import csv
 import re
+import time
 from typing import Optional
 from statistics import mean
 import geopandas as gpd
 import pandas as pd
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# Routing utilities
+try:
+    from routing.osrm_router import OSRMRouter, RouteResult
+except Exception:
+    # Fallback if relative import fails in some contexts
+    from .routing.osrm_router import OSRMRouter, RouteResult
 
 app = FastAPI(title="Neighborhood Insights API", version="1.0.0")
 
@@ -217,6 +225,24 @@ def read_root():
         "total_pois": len(pois_data),
         "total_statistical_areas": statistical_areas.get('total', 0),
         "total_job_centers": job_centers.get('total', 0)
+    }
+
+@app.get("/health/osrm")
+def check_osrm_health():
+    """Check if OSRM routing API is accessible"""
+    router = OSRMRouter()
+
+    # Test with a simple route in Israel (Tel Aviv to nearby point)
+    tel_aviv = (32.0853, 34.7818)
+    nearby = (32.0900, 34.7850)
+
+    result = router.calculate_route_time(tel_aviv, nearby, "driving")
+
+    return {
+        "osrm_available": result.success,
+        "error_message": result.error_message if not result.success else None,
+        "test_route": "Tel Aviv (short distance)",
+        "recommendation": "Use fallback routing or local OSRM server" if not result.success else "OSRM API working"
     }
 
 @app.get("/pois")
@@ -521,6 +547,298 @@ def get_job_centers_near(lat: float, lon: float, radius_km: float = 10.0):
         "total": len(nearby_centers),
         "search_center": {"latitude": lat, "longitude": lon},
         "radius_km": radius_km
+    }
+
+# ---------------------------
+# Routing: Areas -> Job Center
+# ---------------------------
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    import math
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat/2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    return R * c
+
+
+@app.post("/routes/areas-to-center")
+def calculate_routes_areas_to_center(payload: dict):
+    """
+    Calculate routing times from statistical area centroids to a job center.
+
+    Body JSON:
+    - center_id: int (required)
+    - threshold_minutes: float (optional, filters candidates by approx driving time)
+    - approx_speed_kmh: float (optional, default 40)
+    - modes: list[str] (optional, any of ["driving","cycling","walking","transit"]) – default all
+
+    Returns JSON with per-area minutes for requested modes. Only areas whose
+    approximate driving time is <= threshold_minutes are processed (if provided).
+    """
+    start_time = time.time()
+
+    try:
+        center_id = int(payload.get("center_id"))
+    except Exception:
+        return {"error": "center_id is required and must be an integer"}
+
+    threshold_minutes = payload.get("threshold_minutes")
+    try:
+        threshold_minutes = float(threshold_minutes) if threshold_minutes is not None else None
+    except Exception:
+        return {"error": "threshold_minutes must be a number"}
+
+    approx_speed_kmh = payload.get("approx_speed_kmh")
+    try:
+        approx_speed_kmh = float(approx_speed_kmh) if approx_speed_kmh is not None else 40.0
+    except Exception:
+        approx_speed_kmh = 40.0
+
+    modes = payload.get("modes") or ["driving", "cycling", "walking", "transit"]
+    valid_modes = {"driving", "cycling", "walking", "transit"}
+    modes = [m for m in modes if m in valid_modes]
+    if not modes:
+        modes = ["driving", "cycling", "walking", "transit"]
+
+    # Validate data availability
+    gdf = statistical_areas.get('gdf')
+    centers = job_centers.get('data', [])
+    if gdf is None or not len(gdf):
+        return {"error": "Statistical areas data not available"}
+    if not centers:
+        return {"error": "Job centers data not available"}
+
+    center = next((c for c in centers if c.get('id') == center_id), None)
+    if not center:
+        return {"error": f"Job center {center_id} not found"}
+
+    center_coord = (float(center.get('latitude')), float(center.get('longitude')))
+
+    # Build list of candidate areas with centroids
+    # Prefer OBJECTID if present; else fallback to index
+    candidates = []
+    for idx, row in gdf.iterrows():
+        geom = row.get('geometry')
+        if geom is None or geom.is_empty:
+            continue
+        try:
+            centroid = geom.centroid
+            lat, lon = float(centroid.y), float(centroid.x)
+        except Exception:
+            continue
+        area_id = row.get('OBJECTID', idx)
+
+        # Optional approximate filtering by driving time
+        if threshold_minutes is not None and approx_speed_kmh > 0:
+            dist_km = _haversine_km(lat, lon, center_coord[0], center_coord[1])
+            approx_minutes = (dist_km / approx_speed_kmh) * 60.0
+            if approx_minutes > threshold_minutes:
+                continue
+
+        candidates.append({
+            "area_id": int(area_id) if area_id is not None else int(idx),
+            "lat": lat,
+            "lon": lon,
+        })
+
+    if not candidates:
+        return {
+            "center_id": center_id,
+            "modes": modes,
+            "total_candidates": 0,
+            "areas": []
+        }
+
+    # Perform routing per mode using OSRM where applicable
+    router = OSRMRouter()
+
+    def _compute_mode(mode: str) -> dict:
+        results: dict[int, dict] = {}
+        # Use threads for concurrency (50 workers for I/O-bound OSRM requests)
+        with ThreadPoolExecutor(max_workers=50) as executor:
+            future_to_id = {}
+            for cand in candidates:
+                origin = (cand["lat"], cand["lon"])  # area -> center
+                # Transit mode: use driving time × 2 as heuristic
+                if mode == "transit":
+                    future = executor.submit(router.calculate_route_time, origin, center_coord, "driving")
+                    future_to_id[future] = (cand["area_id"], True)  # Mark as transit heuristic
+                else:
+                    future = executor.submit(router.calculate_route_time, origin, center_coord, mode)
+                    future_to_id[future] = (cand["area_id"], False)
+
+            for future in as_completed(future_to_id):
+                area_id, is_transit_heuristic = future_to_id[future]
+                try:
+                    res: RouteResult = future.result()
+                    if is_transit_heuristic and res.success:
+                        # Double the driving time for transit estimate
+                        results[area_id] = {
+                            "duration_minutes": round(res.duration_minutes * 2, 1),
+                            "distance_km": round(res.distance_km, 2),
+                            "success": True,
+                            "mode": "transit",
+                            "method": "heuristic_2x_driving"
+                        }
+                    else:
+                        results[area_id] = {
+                            "duration_minutes": round(res.duration_minutes, 1) if res.success else None,
+                            "distance_km": round(res.distance_km, 2) if res.success else None,
+                            "success": bool(res.success),
+                            "mode": mode
+                        }
+                except Exception as e:
+                    results[area_id] = {
+                        "duration_minutes": None,
+                        "distance_km": None,
+                        "success": False,
+                        "mode": mode,
+                        "error": str(e)
+                    }
+        return results
+
+    per_mode_results: dict[str, dict] = {}
+    for mode in modes:
+        per_mode_results[mode] = _compute_mode(mode)
+
+    # Merge per-mode results per area
+    areas_out = []
+    for cand in candidates:
+        aid = cand["area_id"]
+        entry = {
+            "area_id": aid,
+            "centroid": {"latitude": cand["lat"], "longitude": cand["lon"]},
+            "results": {}
+        }
+        for mode in modes:
+            if aid in per_mode_results.get(mode, {}):
+                entry["results"][mode] = per_mode_results[mode][aid]
+        areas_out.append(entry)
+
+    processing_time = time.time() - start_time
+
+    # Calculate success/failure statistics per mode
+    stats = {}
+    for mode in modes:
+        mode_results = per_mode_results.get(mode, {})
+        successful = sum(1 for r in mode_results.values() if r.get('success'))
+        failed = len(mode_results) - successful
+        stats[mode] = {
+            "successful": successful,
+            "failed": failed,
+            "success_rate": round(successful / len(mode_results) * 100, 1) if mode_results else 0
+        }
+
+    # Overall stats
+    total_requests = len(candidates) * len(modes)
+    total_successful = sum(s["successful"] for s in stats.values())
+    total_failed = sum(s["failed"] for s in stats.values())
+
+    return {
+        "center_id": center_id,
+        "modes": modes,
+        "total_candidates": len(candidates),
+        "processing_time_seconds": round(processing_time, 2),
+        "statistics": {
+            "total_requests": total_requests,
+            "successful": total_successful,
+            "failed": total_failed,
+            "success_rate": round(total_successful / total_requests * 100, 1) if total_requests else 0,
+            "by_mode": stats
+        },
+        "areas": areas_out
+    }
+
+
+@app.get("/routes/area-to-center")
+def calculate_route_area_to_center(center_id: int, area_id: int, modes: Optional[str] = None, include_geometry: bool = False):
+    """
+    Calculate routing from a specific statistical area centroid to a job center.
+
+    Query params:
+    - center_id: job center ID
+    - area_id: statistical area OBJECTID
+    - modes: comma-separated list among driving,cycling,walking,transit (default all)
+    - include_geometry: if true, include route geometry for non-transit modes
+    """
+    gdf = statistical_areas.get('gdf')
+    centers = job_centers.get('data', [])
+    if gdf is None or not len(gdf):
+        return {"error": "Statistical areas data not available"}
+    if not centers:
+        return {"error": "Job centers data not available"}
+
+    center = next((c for c in centers if c.get('id') == center_id), None)
+    if not center:
+        return {"error": f"Job center {center_id} not found"}
+
+    center_coord = (float(center.get('latitude')), float(center.get('longitude')))
+
+    # Find area by OBJECTID
+    try:
+        # Try exact match
+        sel = gdf[gdf['OBJECTID'] == area_id]
+        if sel.empty:
+            # Try casting OBJECTID to int (handles float/object dtypes)
+            try:
+                sel = gdf[gdf['OBJECTID'].astype(int) == int(area_id)]
+            except Exception:
+                sel = gdf
+                sel = sel[sel['OBJECTID'].apply(lambda v: int(v) == int(area_id) if pd.notna(v) else False)]
+        row = sel.iloc[0]
+    except Exception:
+        return {"error": f"Area {area_id} not found"}
+
+    geom = row.get('geometry')
+    if geom is None or geom.is_empty:
+        return {"error": f"Area {area_id} has no geometry"}
+
+    centroid = geom.centroid
+    origin = (float(centroid.y), float(centroid.x))
+
+    mode_list = ["driving", "cycling", "walking", "transit"]
+    if modes:
+        requested = [m.strip() for m in str(modes).split(',') if m.strip()]
+        valid = {"driving", "cycling", "walking", "transit"}
+        mode_list = [m for m in requested if m in valid] or mode_list
+
+    router = OSRMRouter()
+    results: dict[str, dict] = {}
+    for mode in mode_list:
+        if mode == "transit":
+            # No graceful fallback for transit
+            results[mode] = {
+                "duration_minutes": None,
+                "distance_km": None,
+                "success": False,
+                "mode": "transit",
+                "error": "Transit routing not supported"
+            }
+            continue
+        try:
+            res = router.calculate_route_time(origin, center_coord, mode, return_geometry=include_geometry)
+            payload = {
+                "duration_minutes": round(res.duration_minutes, 1) if res.success else None,
+                "distance_km": round(res.distance_km, 2) if res.success else None,
+                "success": bool(res.success),
+                "mode": mode,
+                "error": res.error_message,
+            }
+            if include_geometry and res.geometry:
+                # geometry is list of (lat, lon) pairs
+                payload["geometry"] = res.geometry
+            results[mode] = payload
+        except Exception as e:
+            results[mode] = {"duration_minutes": None, "distance_km": None, "success": False, "mode": mode, "error": str(e)}
+
+    return {
+        "center_id": center_id,
+        "area_id": area_id,
+        "origin": {"latitude": origin[0], "longitude": origin[1]},
+        "destination": {"latitude": center_coord[0], "longitude": center_coord[1]},
+        "results": results,
     }
 
 if __name__ == "__main__":

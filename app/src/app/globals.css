@@ -3,6 +3,41 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Layout dimensions */
+  --header-height: 5rem;
+  --filter-panel-width: 26rem;
+  --map-offset: 5rem;
+
+  /* Z-index layering system */
+  --z-base: 0;
+  --z-dropdown: 10;
+  --z-filter-panel: 20;
+  --z-header: 30;
+  --z-modal: 40;
+  --z-popup: 50;
+  --z-toast: 60;
+
+  /* Spacing scale */
+  --spacing-xs: 0.25rem;
+  --spacing-sm: 0.5rem;
+  --spacing-md: 1rem;
+  --spacing-lg: 1.5rem;
+  --spacing-xl: 2rem;
+  --spacing-2xl: 3rem;
+  --spacing-3xl: 4rem;
+
+  /* Border radius */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+
+  /* Shadows (Modern Minimalist: subtle depth) */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1);
 }
 
 @theme inline {
@@ -38,4 +73,66 @@ body {
 .mapboxgl-ctrl * {
   transition: none !important;
   animation: none !important;
+}
+
+/* Typography scale - Modern Minimalist */
+h1 {
+  font-size: 1.875rem; /* 30px */
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+
+h2 {
+  font-size: 1.5rem; /* 24px */
+  font-weight: 600;
+  letter-spacing: -0.0125em;
+  line-height: 1.3;
+}
+
+h3 {
+  font-size: 1.125rem; /* 18px */
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.text-body {
+  font-size: 0.875rem; /* 14px */
+  line-height: 1.5;
+}
+
+.text-caption {
+  font-size: 0.75rem; /* 12px */
+  line-height: 1.4;
+  letter-spacing: 0.025em;
+}
+
+/* Transition standards */
+.transition-standard {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.transition-slow {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Hover effects */
+.hover-lift:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+/* Accessible focus indicators */
+:focus-visible {
+  outline: 2px solid rgb(59, 130, 246); /* blue-500 */
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid rgb(59, 130, 246);
+  outline-offset: 2px;
 }

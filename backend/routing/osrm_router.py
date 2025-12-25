@@ -41,10 +41,15 @@ class RouteResult:
 class OSRMRouter:
     """OSRM router for calculating routes between coordinates."""
 
-    def __init__(self):
+    def __init__(self, cache_ttl: int = OSRM_CONFIG["cache_ttl"]):
         """Initialize the OSRM router with configured session."""
         self.session = self._create_session()
-        self._cache: Dict[str, RouteResult] = {}
+        # Import RouteCache for TTL and size-limited caching
+        try:
+            from .route_optimizer import RouteCache
+        except ImportError:
+            from route_optimizer import RouteCache
+        self._cache = RouteCache(ttl_seconds=cache_ttl)
 
     def _create_session(self) -> requests.Session:
         """Create a requests session with retry strategy."""
@@ -69,12 +74,11 @@ class OSRMRouter:
 
     def _get_cached_route(self, cache_key: str) -> Optional[RouteResult]:
         """Get cached route if available and not expired."""
-        # Simple cache without TTL for now - can be enhanced with timestamps
         return self._cache.get(cache_key)
 
     def _cache_route(self, cache_key: str, result: RouteResult) -> None:
         """Cache route result."""
-        self._cache[cache_key] = result
+        self._cache.set(cache_key, result)
 
     def _validate_coordinates(self, lat: float, lon: float) -> bool:
         """Validate coordinate values."""
@@ -84,22 +88,25 @@ class OSRMRouter:
                          transport_mode: str, include_geometry: bool = False) -> str:
         """Format OSRM API URL."""
         mode_config = TransportModes.get_mode(transport_mode)
-
         # OSRM expects lon,lat format
         origin_str = f"{origin[1]:.6f},{origin[0]:.6f}"
         dest_str = f"{destination[1]:.6f},{destination[0]:.6f}"
 
         url = f"{mode_config.base_url}/{origin_str};{dest_str}"
 
-        params = ["overview=false", "steps=false"]
+        params = ["steps=false"]
         if include_geometry:
+            params.append("overview=full")
             params.append("geometries=geojson")
+        else:
+            params.append("overview=false")
 
         return f"{url}?{'&'.join(params)}"
 
     def _parse_osrm_response(self, response_data: Dict[str, Any],
                            transport_mode: str) -> RouteResult:
         """Parse OSRM API response."""
+        # Check for OSRM API errors first
         if response_data.get("code") != "Ok":
             return RouteResult(
                 duration_seconds=0,
@@ -108,14 +115,24 @@ class OSRMRouter:
                 distance_km=0,
                 transport_mode=transport_mode,
                 success=False,
-                error_message=f"OSRM API error: {response_data.get('message', 'Unknown error')}"
+                error_message=f"OSRM error: {response_data.get('message', 'Unknown error')}"
             )
 
         routes = response_data.get("routes", [])
+        if not routes:
+            return RouteResult(
+                duration_seconds=0,
+                duration_minutes=0,
+                distance_meters=0,
+                distance_km=0,
+                transport_mode=transport_mode,
+                success=False,
+                error_message="No routes found"
+            )
+
         route = routes[0]
         duration_seconds = route.get("duration", 0)
         distance_meters = route.get("distance", 0)
-
         # Extract geometry if available
         geometry = None
         if "geometry" in route and "coordinates" in route["geometry"]:
@@ -176,20 +193,46 @@ class OSRMRouter:
         if cached_result:
             return cached_result
 
-        # Make OSRM request
+        # Make OSRM request with error handling
         url = self._format_osrm_url(origin, destination, transport_mode, return_geometry)
 
-        response = self.session.get(url, timeout=OSRM_CONFIG["timeout"])
-        response.raise_for_status()
+        try:
+            response = self.session.get(url, timeout=OSRM_CONFIG["timeout"])
+            response.raise_for_status()
 
-        response_data = response.json()
-        result = self._parse_osrm_response(response_data, transport_mode)
+            response_data = response.json()
+            result = self._parse_osrm_response(response_data, transport_mode)
 
-        # Cache successful results
-        if result.success:
-            self._cache_route(cache_key, result)
+            # Cache successful results
+            if result.success:
+                self._cache_route(cache_key, result)
 
-        return result
+            return result
+
+        except requests.exceptions.Timeout:
+            return RouteResult(
+                duration_seconds=0, duration_minutes=0, distance_meters=0, distance_km=0,
+                transport_mode=transport_mode, success=False,
+                error_message="OSRM API timeout - service not responding"
+            )
+        except requests.exceptions.ConnectionError:
+            return RouteResult(
+                duration_seconds=0, duration_minutes=0, distance_meters=0, distance_km=0,
+                transport_mode=transport_mode, success=False,
+                error_message="OSRM API connection failed - service unreachable"
+            )
+        except requests.exceptions.HTTPError as e:
+            return RouteResult(
+                duration_seconds=0, duration_minutes=0, distance_meters=0, distance_km=0,
+                transport_mode=transport_mode, success=False,
+                error_message=f"OSRM API HTTP error: {e.response.status_code}"
+            )
+        except Exception as e:
+            return RouteResult(
+                duration_seconds=0, duration_minutes=0, distance_meters=0, distance_km=0,
+                transport_mode=transport_mode, success=False,
+                error_message=f"OSRM API error: {str(e)}"
+            )
 
     def calculate_routes_batch(self, origin: Tuple[float, float],
                              destinations: List[Tuple[float, float]],

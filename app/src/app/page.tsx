@@ -3,30 +3,18 @@
 import { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-
-interface POI {
-  id: number;
-  name_he: string;
-  name_en: string;
-  type: string;
-  longitude: number;
-  latitude: number;
-}
-
-interface JobCenter {
-  id: number;
-  name_he: string;
-  name_en: string;
-  address: string;
-  estimated_employees: number;
-  type: string;
-  longitude: number;
-  latitude: number;
-}
+import { POI, JobCenter } from '@/types';
+import { calculateDistance, calculateDrivingTime } from '@/utils/geo';
+import { getPOIHexColor } from '@/utils/colors';
+import { Header } from '@/components/Header/Header';
+import { MapView } from '@/components/MapView/MapView';
+import { RoutingAnalysisPanel } from '@/components/RoutingAnalysis/RoutingAnalysisPanel';
+import { BottomSheet } from '@/components/BottomSheet/BottomSheet';
+import { useResponsive } from '@/hooks/useResponsive';
 
 
 export default function Home() {
-  const mapContainer = useRef<HTMLDivElement>(null);
+  const { isMobile } = useResponsive();
   const map = useRef<mapboxgl.Map | null>(null);
   const [pois, setPois] = useState<POI[]>([]);
   const [poiTypes, setPOITypes] = useState<string[]>([]);
@@ -39,36 +27,20 @@ export default function Home() {
   const [showJobCenters, setShowJobCenters] = useState(false);
   const [jobCentersLoading, setJobCentersLoading] = useState(false);
   const [selectedJobCenter, setSelectedJobCenter] = useState<JobCenter | null>(null);
+  const selectedJobCenterRef = useRef<JobCenter | null>(null);
   const [distanceCalculationEnabled, setDistanceCalculationEnabled] = useState(false);
   const [averageDrivingSpeed, setAverageDrivingSpeed] = useState(40); // km/h
   const [drivingTimeThreshold, setDrivingTimeThreshold] = useState(30); // minutes
+  const [routesCalculationEnabled, setRoutesCalculationEnabled] = useState(false);
+  const [routesLoading, setRoutesLoading] = useState(false);
+  const [routingStats, setRoutingStats] = useState<any>(null);
+  const [routingError, setRoutingError] = useState<string | null>(null);
+  const statAreasDataRef = useRef<any | null>(null);
 
-
-  // Distance calculation function
-  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-    const R = 6371; // Earth's radius in kilometers
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a =
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-      Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
-  };
-
-  // Calculate driving time in minutes
-  const calculateDrivingTime = (distanceKm: number, speedKmh: number): number => {
-    return (distanceKm / speedKmh) * 60; // Convert hours to minutes
-  };
-
-  // Get color based on distance
-  const getDistanceColor = (distance: number, maxDistance: number): string => {
-    const ratio = distance / maxDistance;
-    if (ratio < 0.33) return '#10B981'; // Green for short distances
-    if (ratio < 0.67) return '#F59E0B'; // Orange for medium distances
-    return '#EF4444'; // Red for long distances
-  };
+  // Keep a ref to the latest selected job center so event handlers use fresh value
+  useEffect(() => {
+    selectedJobCenterRef.current = selectedJobCenter;
+  }, [selectedJobCenter]);
 
   // Fetch POI data from backend only when map is ready
   useEffect(() => {
@@ -178,6 +150,7 @@ export default function Home() {
               type: 'geojson',
               data: geojsonData
             });
+            statAreasDataRef.current = geojsonData;
 
             // Add boundary layer (lines)
             currentMap.addLayer({
@@ -223,11 +196,16 @@ export default function Home() {
 
               const props: any = f.properties || {};
               const coord = e.lngLat;
+              const areaId = props['OBJECTID'];
 
               // Define display order and Hebrew names
               const hebrewFieldMap = [
                 { key: 'distance_km', name: 'מרחק ממוקד התעסוקה', priority: 0, suffix: ' ק"מ' },
-                { key: 'driving_time_minutes', name: 'זמן נסיעה משוער', priority: 1, suffix: ' דקות' },
+                { key: 'driving_time_minutes', name: 'זמן נסיעה משוער (קו אוויר)', priority: 1, suffix: ' דקות' },
+                { key: 'route_time_driving', name: 'מסלול: רכב (דקות)', priority: 1, suffix: ' דקות' },
+                { key: 'route_time_cycling', name: 'מסלול: אופניים (דקות)', priority: 1, suffix: ' דקות' },
+                { key: 'route_time_walking', name: 'מסלול: הליכה (דקות)', priority: 1, suffix: ' דקות' },
+                { key: 'route_time_transit', name: 'מסלול: תחבורה ציבורית (משוער)', priority: 1, suffix: ' דקות' },
                 { key: 'שם_יישוב', name: 'שם יישוב', priority: 1 },
                 { key: 'שם_יישוב_אנגלית', name: 'שם יישוב באנגלית', priority: 2 },
                 { key: 'סוג_יישוב', name: 'סוג יישוב', priority: 3 },
@@ -285,7 +263,7 @@ export default function Home() {
 
               // Create popup content
               const popupContent = `
-                <div dir="rtl" style="font-family:Arial,sans-serif;min-width:420px;max-width:500px;direction:rtl;padding:4px">
+                <div dir="rtl" style="font-family:Arial,sans-serif;direction:rtl;padding:8px;max-width:min(500px,92vw);width:min(500px,92vw);max-height:calc(100vh - 180px);overflow-y:auto;overflow-wrap:anywhere">
                   <div style="display:flex;align-items:center;margin-bottom:16px;justify-content:space-between">
                     <span style="font-size:13px;color:#0369A1;background:#E0F2FE;padding:6px 12px;border-radius:16px;font-weight:700">אזור סטטיסטי</span>
                     ${props['אזור_גיאוגרפי'] ? `<span style="font-size:13px;color:#059669;background:#ECFDF5;padding:6px 12px;border-radius:16px;font-weight:700">${props['אזור_גיאוגרפי']}</span>` : ''}
@@ -297,6 +275,8 @@ export default function Home() {
                   ${props['שם_יישוב_אנגלית'] ? `<div style="font-size:16px;color:#6B7280;margin-bottom:12px;text-align:right;font-weight:600">${props['שם_יישוב_אנגלית']}</div>` : ''}
 
                   ${distanceInfo}
+
+                  <div id="route-slot-${areaId}" style="margin:8px 0 12px 0"></div>
 
                   <div style="margin-bottom:20px;background:#F9FAFB;padding:12px;border-radius:12px">
                     ${displayProps.map(item => `
@@ -316,10 +296,122 @@ export default function Home() {
                 </div>
               `;
 
-              new mapboxgl.Popup({ closeButton: true, offset: 15, maxWidth: '500px' })
+              const popup = new mapboxgl.Popup({ closeButton: true, offset: 15, maxWidth: '500px' })
                 .setLngLat(coord)
                 .setHTML(popupContent)
                 .addTo(currentMap);
+
+              // Append routing UI and wire events
+              try {
+                const popupEl = popup.getElement();
+                // Insert after the details block
+                const root = popupEl?.querySelector('div[dir="rtl"]');
+                const activeCenter = selectedJobCenterRef.current;
+                const sectionHTML = activeCenter ? `
+                  <div id="route-actions-${areaId}" style="margin:12px 0;padding:10px;background:#ECFDF5;border-radius:10px;border:1px solid #A7F3D0">
+                    <div style="font-size:13px;font-weight:700;color:#065F46;margin-bottom:8px">חישוב מסלול אל ${activeCenter.name_he}</div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap">
+                      <button data-mode="driving" style="font-size:12px;background:#10B981;color:white;padding:6px 10px;border-radius:8px;border:none;cursor:pointer">רכב</button>
+                      <button data-mode="cycling" style="font-size:12px;background:#3B82F6;color:white;padding:6px 10px;border-radius:8px;border:none;cursor:pointer">אופניים</button>
+                      <button data-mode="walking" style="font-size:12px;background:#F59E0B;color:white;padding:6px 10px;border-radius:8px;border:none;cursor:pointer">הליכה</button>
+                      <button data-mode="transit" style="font-size:12px;background:#8B5CF6;color:white;padding:6px 10px;border-radius:8px;border:none;cursor:pointer">תחבורה</button>
+                    </div>
+                    <div id="route-result-${areaId}" style="margin-top:8px;font-size:13px;color:#065F46"></div>
+                  </div>` : `
+                  <div id="route-actions-${areaId}" style="margin:12px 0;padding:10px;background:#FEF3C7;border-radius:10px;border:1px solid #FDE68A;color:#92400E">
+                    <div style="font-size:13px;font-weight:700;margin-bottom:4px">כדי לחשב מסלול נא לבחור מוקד תעסוקה</div>
+                    <div style="font-size:12px;opacity:0.9">בחר/י מוקד תעסוקה בלוח הצד</div>
+                  </div>`;
+                // Prefer inserting into the route slot if present; else append to root
+                const slot = root?.querySelector?.(`#route-slot-${areaId}`);
+                if (slot) {
+                  (slot as HTMLElement).innerHTML = sectionHTML;
+                } else if (root) {
+                  (root as HTMLElement).insertAdjacentHTML('afterbegin', sectionHTML);
+                }
+
+                if (activeCenter) {
+                  const resultEl = popupEl?.querySelector(`#route-result-${areaId}`) as HTMLElement | null;
+
+                  const renderRoute = (geometry: Array<[number, number]> | null) => {
+                    // Remove previous preview
+                    if (currentMap.getLayer('route-preview')) {
+                      currentMap.removeLayer('route-preview');
+                    }
+                    if (currentMap.getSource('route-preview-src')) {
+                      currentMap.removeSource('route-preview-src');
+                    }
+
+                    if (!geometry || geometry.length < 2) return;
+                    // Convert [lat,lon] -> [lon,lat]
+                    const lineCoords = geometry.map((p) => [p[1], p[0]]);
+                    currentMap.addSource('route-preview-src', {
+                      type: 'geojson',
+                      data: {
+                        type: 'Feature',
+                        geometry: { type: 'LineString', coordinates: lineCoords },
+                        properties: {}
+                      }
+                    });
+                    currentMap.addLayer({
+                      id: 'route-preview',
+                      type: 'line',
+                      source: 'route-preview-src',
+                      paint: {
+                        'line-color': '#10B981',
+                        'line-width': 4,
+                        'line-opacity': 0.9
+                      }
+                    });
+                  };
+
+                  const actionsEl = popupEl?.querySelector(`#route-actions-${areaId}`);
+                  if (actionsEl) {
+                    actionsEl.querySelectorAll('button[data-mode]').forEach((btn) => {
+                      btn.addEventListener('click', async () => {
+                        const mode = (btn as HTMLElement).getAttribute('data-mode') || 'driving';
+                        if (resultEl) resultEl.textContent = 'מחשב מסלול…';
+                        try {
+                          const center = selectedJobCenterRef.current;
+                          if (!center) return;
+                          const url = `http://localhost:8001/routes/area-to-center?center_id=${center.id}&area_id=${areaId}&modes=${mode}&include_geometry=true`;
+                          const resp = await fetch(url);
+                          const data = await resp.json();
+                          if ((data as any).error) {
+                            if (resultEl) resultEl.textContent = String((data as any).error);
+                            return;
+                          }
+                          const r = data.results?.[mode];
+                          if (r && r.success) {
+                            if (resultEl) {
+                              const mins = r.duration_minutes?.toLocaleString?.() ?? r.duration_minutes;
+                              const dist = r.distance_km?.toLocaleString?.() ?? r.distance_km;
+                              resultEl.innerHTML = `זמן ${mode}: <b>${mins}</b> דקות · מרחק: <b>${dist}</b> ק\"מ`;
+                              if (mode === 'transit' && r.method === 'heuristic_driving_x2') {
+                                resultEl.innerHTML += `<div style=\"font-size:11px;color:#065F46;opacity:0.8\">הערכה על בסיס זמן נסיעה ברכב ×2</div>`;
+                              }
+                            }
+                            if (r.geometry) {
+                              renderRoute(r.geometry);
+                            } else {
+                              renderRoute(null);
+                            }
+                          } else {
+                            const err = r?.error || 'חישוב נכשל';
+                            if (resultEl) resultEl.textContent = err;
+                            renderRoute(null);
+                          }
+                        } catch (err) {
+                          if (resultEl) resultEl.textContent = 'שגיאה בחישוב המסלול';
+                          renderRoute(null);
+                        }
+                      });
+                    });
+                  }
+                }
+              } catch (err) {
+                console.error('Failed attaching route handlers', err);
+              }
             });
 
             // Add hover effects for statistical areas
@@ -366,6 +458,7 @@ export default function Home() {
           } else {
             // Update existing source
             (currentMap.getSource('statistical-areas') as mapboxgl.GeoJSONSource).setData(geojsonData);
+            statAreasDataRef.current = geojsonData;
           }
 
           // Apply distance-based coloring if a job center is selected
@@ -444,6 +537,7 @@ export default function Home() {
 
             // Update the source with distance data
             (currentMap.getSource('statistical-areas') as mapboxgl.GeoJSONSource).setData(geojsonData);
+            statAreasDataRef.current = geojsonData;
 
             // Apply distance-based coloring with time threshold filtering
             currentMap.setPaintProperty('statistical-areas-fill', 'fill-color', [
@@ -658,6 +752,97 @@ export default function Home() {
     }
   }, [showJobCenters, mapReady, jobCenters]);
 
+  // Calculate routes for valid areas when enabled
+  useEffect(() => {
+    const currentMap = map.current;
+    if (!routesCalculationEnabled) return;
+    if (!mapReady || !currentMap) return;
+    if (!selectedJobCenter) return;
+    if (!statAreasDataRef.current) return;
+
+    const run = async () => {
+      try {
+        setRoutesLoading(true);
+        setRoutingError(null);
+        setRoutingStats(null);
+
+        const payload = {
+          center_id: selectedJobCenter.id,
+          threshold_minutes: drivingTimeThreshold,
+          approx_speed_kmh: averageDrivingSpeed,
+          modes: ["driving", "cycling", "walking", "transit"],
+        };
+        const res = await fetch('/api/routes/areas-to-center', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const errorText = await res.text();
+          setRoutingError(`Server error (${res.status}): ${errorText.substring(0, 200)}`);
+          console.error('Routes API error', res.status, errorText);
+          setRoutesLoading(false);
+          return;
+        }
+        const data = await res.json();
+
+        // Store statistics from response
+        if (data.statistics) {
+          setRoutingStats(data.statistics);
+        }
+        const resultsMap = new Map<number, any>();
+        (data.areas || []).forEach((a: any) => {
+          resultsMap.set(Number(a.area_id), a.results || {});
+        });
+
+        // Clone current data
+        const updated = JSON.parse(JSON.stringify(statAreasDataRef.current));
+
+        // Initialize all to not within threshold when using real routes
+        updated.features.forEach((feature: any) => {
+          feature.properties.is_within_threshold = false;
+        });
+
+        // Merge route results
+        updated.features.forEach((feature: any) => {
+          const oid = Number(feature.properties?.OBJECTID);
+          const r = resultsMap.get(oid);
+          if (!r) return;
+
+          const d = r.driving || {};
+          const c = r.cycling || {};
+          const w = r.walking || {};
+          const t = r.transit || {};
+
+          feature.properties.route_time_driving = d.duration_minutes ?? null;
+          feature.properties.route_distance_driving_km = d.distance_km ?? null;
+          feature.properties.route_time_cycling = c.duration_minutes ?? null;
+          feature.properties.route_distance_cycling_km = c.distance_km ?? null;
+          feature.properties.route_time_walking = w.duration_minutes ?? null;
+          feature.properties.route_distance_walking_km = w.distance_km ?? null;
+          feature.properties.route_time_transit = t.duration_minutes ?? null;
+          feature.properties.route_distance_transit_km = t.distance_km ?? null;
+
+          // Apply threshold based on driving route time
+          if (feature.properties.route_time_driving != null) {
+            feature.properties.is_within_threshold = feature.properties.route_time_driving <= drivingTimeThreshold;
+          }
+        });
+
+        (currentMap.getSource('statistical-areas') as mapboxgl.GeoJSONSource).setData(updated);
+        statAreasDataRef.current = updated;
+      } catch (e) {
+        const errorMsg = e instanceof Error ? e.message : 'Unknown error occurred';
+        setRoutingError(`Failed to calculate routes: ${errorMsg}`);
+        console.error('Failed to calculate routes:', e);
+      } finally {
+        setRoutesLoading(false);
+      }
+    };
+
+    run();
+  }, [routesCalculationEnabled, selectedJobCenter, drivingTimeThreshold, averageDrivingSpeed, mapReady]);
+
 
   // Reset statistical areas coloring when distance calculation is disabled
   useEffect(() => {
@@ -673,38 +858,81 @@ export default function Home() {
     }
   }, [distanceCalculationEnabled, mapReady]);
 
-  // Initialize map
-  useEffect(() => {
-    if (map.current) return;
+  // Handle map ready callback from MapView component
+  const handleMapReady = (readyMap: mapboxgl.Map) => {
+    map.current = readyMap;
+    setMapReady(true);
+  };
 
-    mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN!;
+  // Handle route calculation
+  const handleCalculateRoutes = async () => {
+    if (!selectedJobCenter) return;
+    if (!map.current || !mapReady) return;
+    if (!statAreasDataRef.current) return;
 
-    if (mapContainer.current) {
-      map.current = new mapboxgl.Map({
-        container: mapContainer.current,
-        style: 'mapbox://styles/mapbox/streets-v12',
-        center: [35.2, 31.5], // Center of Israel
-        zoom: 7,
-        fadeDuration: 0,
-        projection: 'mercator',
-        renderWorldCopies: false,
+    try {
+      setRoutesLoading(true);
+      const payload = {
+        center_id: selectedJobCenter.id,
+        threshold_minutes: drivingTimeThreshold,
+        approx_speed_kmh: averageDrivingSpeed,
+        modes: ["driving", "cycling", "walking", "transit"],
+      };
+
+      const res = await fetch('/api/routes/areas-to-center', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
 
-      // Add navigation control (zoom buttons)
-      map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
-
-      // Set map as ready when style is loaded
-      if (map.current.isStyleLoaded()) {
-        console.log('Map style already loaded, setting map ready');
-        setMapReady(true);
-      } else {
-        map.current.on('style.load', () => {
-          console.log('Map style loaded, setting map ready');
-          setMapReady(true);
-        });
+      if (!res.ok) {
+        console.error('Routes API error', res.status);
+        setRoutesLoading(false);
+        return;
       }
+
+      const data = await res.json();
+      const resultsMap = new Map<number, any>();
+      (data.areas || []).forEach((a: any) => {
+        resultsMap.set(Number(a.area_id), a.results || {});
+      });
+
+      const currentMap = map.current!;
+      const updated = JSON.parse(JSON.stringify(statAreasDataRef.current));
+      updated.features.forEach((feature: any) => {
+        feature.properties.is_within_threshold = false;
+      });
+      updated.features.forEach((feature: any) => {
+        const oid = Number(feature.properties?.OBJECTID);
+        const r = resultsMap.get(oid);
+        if (!r) return;
+        const d = r.driving || {};
+        const c = r.cycling || {};
+        const w = r.walking || {};
+        const t = r.transit || {};
+
+        feature.properties.route_time_driving = d.duration_minutes ?? null;
+        feature.properties.route_distance_driving_km = d.distance_km ?? null;
+        feature.properties.route_time_cycling = c.duration_minutes ?? null;
+        feature.properties.route_distance_cycling_km = c.distance_km ?? null;
+        feature.properties.route_time_walking = w.duration_minutes ?? null;
+        feature.properties.route_distance_walking_km = w.distance_km ?? null;
+        feature.properties.route_time_transit = t.duration_minutes ?? null;
+        feature.properties.route_distance_transit_km = t.distance_km ?? null;
+
+        if (feature.properties.route_time_driving != null) {
+          feature.properties.is_within_threshold = feature.properties.route_time_driving <= drivingTimeThreshold;
+        }
+      });
+
+      (currentMap.getSource('statistical-areas') as mapboxgl.GeoJSONSource).setData(updated);
+      statAreasDataRef.current = updated;
+    } catch (e) {
+      console.error('Failed to calculate routes:', e);
+    } finally {
+      setRoutesLoading(false);
     }
-  }, []);
+  };
 
   // Render POIs as a circle layer (no DOM markers)
   useEffect(() => {
@@ -801,17 +1029,8 @@ export default function Home() {
     updatePOIs();
   }, [pois, selectedTypes, mapReady]);
 
-  // Get marker color based on POI type
-  const getMarkerColor = (type: string): string => {
-    const colors: Record<string, string> = {
-      schools: '#3B82F6',      // Blue
-      kindergartens: '#10B981', // Green
-      clinics: '#EF4444',      // Red
-      bus_stops: '#F59E0B',    // Orange
-      job_center: '#DC2626',   // Red for job centers
-    };
-    return colors[type] || '#6B7280';
-  };
+  // Get marker color based on POI type (now using centralized utility)
+  const getMarkerColor = getPOIHexColor;
 
   // Handle type filter changes
   const handleTypeToggle = (type: string) => {
@@ -822,24 +1041,39 @@ export default function Home() {
     }
   };
 
+  // Calculate filtered POI count for header
+  const filteredPOICount = pois.filter(p => selectedTypes.includes(p.type)).length;
+
   return (
     <div className="h-screen w-full relative bg-gray-50">
-      {/* Header */}
-      <div className="absolute top-0 left-0 right-0 z-20 bg-white/95 border-b border-gray-200 shadow-sm">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Neighborhood Insights</h1>
-            <p className="text-sm text-gray-600">Explore Israel's Points of Interest</p>
-          </div>
-          <div className="flex items-center space-x-2 text-sm text-gray-500">
-            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-            <span>Live Data</span>
-          </div>
-        </div>
-      </div>
-      
-      {/* Filter Panel */}
-      <div className="absolute top-24 right-6 z-10 bg-white/95 p-6 rounded-xl shadow-lg border border-gray-200 min-w-64">
+      {/* Header Component - Fixed */}
+      <Header poiCount={filteredPOICount} />
+
+      {/* Routing Analysis Panel - MOVED OUTSIDE HEADER (Critical Fix) */}
+      {!isMobile && (
+        <RoutingAnalysisPanel
+          selectedJobCenter={selectedJobCenter}
+          routesCalculationEnabled={routesCalculationEnabled}
+          onToggleRoutesCalculation={setRoutesCalculationEnabled}
+          routesLoading={routesLoading}
+          routingStats={routingStats}
+          routingError={routingError}
+          onCalculateRoutes={handleCalculateRoutes}
+        />
+      )}
+
+      {/* Filter Panel - Fixed CSS (width, spacing, z-index) */}
+      {!isMobile && (
+      <div
+        className="fixed bg-white/95 backdrop-blur-sm p-6 rounded-xl shadow-lg border border-gray-200 overflow-y-auto overflow-x-hidden"
+        style={{
+          top: 'calc(var(--header-height) + 1rem)',
+          right: '1.5rem',
+          zIndex: 'var(--z-filter-panel)',
+          width: 'min(26rem, calc(100vw - 3rem))',
+          maxHeight: 'calc(100vh - var(--header-height) - 2rem)',
+        }}
+      >
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
           <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
@@ -859,7 +1093,7 @@ export default function Home() {
               const isSelected = selectedTypes.includes(type);
               
               return (
-                <label key={type} className="flex items-center space-x-3 cursor-pointer group">
+                <label key={type} className="flex items-center gap-3 cursor-pointer group">
                   <div className="relative">
                     <input
                       type="checkbox"
@@ -904,7 +1138,7 @@ export default function Home() {
         {/* Statistical Areas Toggle */}
         <div className="mt-6 pt-4 border-t border-gray-200">
           <h3 className="text-sm font-semibold text-gray-900 mb-3">Boundaries</h3>
-          <label className="flex items-center space-x-3 cursor-pointer group">
+          <label className="flex items-center gap-3 cursor-pointer group">
             <div className="relative">
               <input
                 type="checkbox"
@@ -1011,7 +1245,7 @@ export default function Home() {
 
           {/* Enable Distance Calculation Toggle */}
           {selectedJobCenter && (
-            <label className="flex items-center space-x-3 cursor-pointer group">
+            <label className="flex items-center gap-3 cursor-pointer group">
               <div className="relative">
                 <input
                   type="checkbox"
@@ -1050,15 +1284,15 @@ export default function Home() {
             <div className="mt-4 p-3 bg-gray-50 rounded-lg">
               <div className="text-xs font-medium text-gray-700 mb-2">Distance Legend</div>
               <div className="space-y-1">
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center gap-2">
                   <div className="w-4 h-4 rounded" style={{ backgroundColor: '#10B981' }}></div>
                   <span className="text-xs text-gray-600">Close (0-33%)</span>
                 </div>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center gap-2">
                   <div className="w-4 h-4 rounded" style={{ backgroundColor: '#F59E0B' }}></div>
                   <span className="text-xs text-gray-600">Medium (33-67%)</span>
                 </div>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center gap-2">
                   <div className="w-4 h-4 rounded" style={{ backgroundColor: '#EF4444' }}></div>
                   <span className="text-xs text-gray-600">Far (67-100%)</span>
                 </div>
@@ -1111,7 +1345,7 @@ export default function Home() {
 
         {/* Quick Actions */}
         <div className="mt-6 pt-4 border-t border-gray-200">
-          <div className="flex space-x-2">
+          <div className="flex gap-2">
             <button
               onClick={() => setSelectedTypes(poiTypes)}
               className="flex-1 text-xs py-2 px-3 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100"
@@ -1127,8 +1361,27 @@ export default function Home() {
           </div>
         </div>
       </div>
+      )}
 
-      <div ref={mapContainer} className="h-full w-full" style={{ marginTop: '80px' }} />
+      {/* MapView Component - Uses CSS variable for margin */}
+      <MapView onMapReady={handleMapReady} />
+
+      {/* Mobile Bottom Sheet - Filter Panel */}
+      {isMobile && (
+        <BottomSheet title="Filters" defaultExpanded={false}>
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                {filteredPOICount} shown
+              </div>
+            </div>
+            {/* Mobile filter content can be added here later - for now just showing count */}
+            <p className="text-sm text-gray-600">
+              Mobile filter panel - tap to expand filters
+            </p>
+          </div>
+        </BottomSheet>
+      )}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import asyncio
 import time
 from typing import List, Tuple, Dict, Optional, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections import OrderedDict
 import aiohttp
 
 try:
@@ -18,11 +19,12 @@ except ImportError:
 
 
 class RouteCache:
-    """Simple in-memory cache for routes with TTL support."""
+    """Simple in-memory cache for routes with TTL support and LRU eviction."""
 
-    def __init__(self, ttl_seconds: int = OSRM_CONFIG["cache_ttl"]):
+    def __init__(self, ttl_seconds: int = OSRM_CONFIG["cache_ttl"], max_size: int = 10000):
         self.ttl_seconds = ttl_seconds
-        self._cache: Dict[str, Dict[str, Any]] = {}
+        self.max_size = max_size
+        self._cache: OrderedDict[str, Dict[str, Any]] = OrderedDict()
 
     def _is_expired(self, timestamp: float) -> bool:
         """Check if cache entry is expired."""
@@ -40,7 +42,15 @@ class RouteCache:
         return None
 
     def set(self, key: str, result: RouteResult) -> None:
-        """Cache route result."""
+        """Cache route result with LRU eviction."""
+        # Evict oldest entry if at max capacity
+        if len(self._cache) >= self.max_size:
+            self._cache.popitem(last=False)
+
+        # Move to end if exists (LRU - most recently used)
+        if key in self._cache:
+            self._cache.move_to_end(key)
+
         self._cache[key] = {
             "result": result,
             "timestamp": time.time()
