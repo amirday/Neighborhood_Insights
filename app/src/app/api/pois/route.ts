@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 export async function GET() {
   try {
     // Proxy to the FastAPI backend
-    const response = await fetch('http://localhost:8001/pois');
+    const response = await fetch('http://localhost:8000/pois');
     
     if (!response.ok) {
       throw new Error(`Backend responded with status: ${response.status}`);

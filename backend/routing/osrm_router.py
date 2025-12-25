@@ -86,15 +86,18 @@ class OSRMRouter:
 
     def _format_osrm_url(self, origin: Tuple[float, float], destination: Tuple[float, float],
                          transport_mode: str, include_geometry: bool = False) -> str:
-        """Format OSRM API URL."""
+        """Format Mapbox Directions API URL."""
         mode_config = TransportModes.get_mode(transport_mode)
-        # OSRM expects lon,lat format
+        # Mapbox expects lon,lat format (same as OSRM)
         origin_str = f"{origin[1]:.6f},{origin[0]:.6f}"
         dest_str = f"{destination[1]:.6f},{destination[0]:.6f}"
 
         url = f"{mode_config.base_url}/{origin_str};{dest_str}"
 
-        params = ["steps=false"]
+        params = [
+            f"access_token={TransportModes.MAPBOX_TOKEN}",
+            "steps=false"
+        ]
         if include_geometry:
             params.append("overview=full")
             params.append("geometries=geojson")
@@ -105,8 +108,8 @@ class OSRMRouter:
 
     def _parse_osrm_response(self, response_data: Dict[str, Any],
                            transport_mode: str) -> RouteResult:
-        """Parse OSRM API response."""
-        # Check for OSRM API errors first
+        """Parse Mapbox Directions API response."""
+        # Check for Mapbox API errors first
         if response_data.get("code") != "Ok":
             return RouteResult(
                 duration_seconds=0,
@@ -115,7 +118,7 @@ class OSRMRouter:
                 distance_km=0,
                 transport_mode=transport_mode,
                 success=False,
-                error_message=f"OSRM error: {response_data.get('message', 'Unknown error')}"
+                error_message=f"Mapbox error: {response_data.get('message', 'Unknown error')}"
             )
 
         routes = response_data.get("routes", [])
@@ -213,25 +216,25 @@ class OSRMRouter:
             return RouteResult(
                 duration_seconds=0, duration_minutes=0, distance_meters=0, distance_km=0,
                 transport_mode=transport_mode, success=False,
-                error_message="OSRM API timeout - service not responding"
+                error_message="Mapbox API timeout - service not responding"
             )
         except requests.exceptions.ConnectionError:
             return RouteResult(
                 duration_seconds=0, duration_minutes=0, distance_meters=0, distance_km=0,
                 transport_mode=transport_mode, success=False,
-                error_message="OSRM API connection failed - service unreachable"
+                error_message="Mapbox API connection failed - service unreachable"
             )
         except requests.exceptions.HTTPError as e:
             return RouteResult(
                 duration_seconds=0, duration_minutes=0, distance_meters=0, distance_km=0,
                 transport_mode=transport_mode, success=False,
-                error_message=f"OSRM API HTTP error: {e.response.status_code}"
+                error_message=f"Mapbox API HTTP error: {e.response.status_code}"
             )
         except Exception as e:
             return RouteResult(
                 duration_seconds=0, duration_minutes=0, distance_meters=0, distance_km=0,
                 transport_mode=transport_mode, success=False,
-                error_message=f"OSRM API error: {str(e)}"
+                error_message=f"Mapbox API error: {str(e)}"
             )
 
     def calculate_routes_batch(self, origin: Tuple[float, float],

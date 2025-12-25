@@ -6,6 +6,7 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import { POI, JobCenter } from '@/types';
 import { calculateDistance, calculateDrivingTime } from '@/utils/geo';
 import { getPOIHexColor } from '@/utils/colors';
+import { getSmartPopupConfig } from '@/utils/popupPositioning';
 import { Header } from '@/components/Header/Header';
 import { MapView } from '@/components/MapView/MapView';
 import { RoutingAnalysisPanel } from '@/components/RoutingAnalysis/RoutingAnalysisPanel';
@@ -107,7 +108,7 @@ export default function Home() {
     const fetchJobCenters = async () => {
       try {
         console.log('Fetching job centers...');
-        const response = await fetch('http://localhost:8001/job-centers');
+        const response = await fetch('http://localhost:8000/job-centers');
         const data = await response.json();
         console.log('Job centers data:', data);
 
@@ -136,7 +137,7 @@ export default function Home() {
         setStatisticalAreasLoading(true);
         try {
           console.log('Loading statistical areas...');
-          const response = await fetch('http://localhost:8001/statistical-areas/geojson');
+          const response = await fetch('http://localhost:8000/statistical-areas/geojson');
           if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
           }
@@ -296,7 +297,7 @@ export default function Home() {
                 </div>
               `;
 
-              const popup = new mapboxgl.Popup({ closeButton: true, offset: 15, maxWidth: '500px' })
+              const popup = new mapboxgl.Popup(getSmartPopupConfig(currentMap, e.point))
                 .setLngLat(coord)
                 .setHTML(popupContent)
                 .addTo(currentMap);
@@ -374,7 +375,7 @@ export default function Home() {
                         try {
                           const center = selectedJobCenterRef.current;
                           if (!center) return;
-                          const url = `http://localhost:8001/routes/area-to-center?center_id=${center.id}&area_id=${areaId}&modes=${mode}&include_geometry=true`;
+                          const url = `http://localhost:8000/routes/area-to-center?center_id=${center.id}&area_id=${areaId}&modes=${mode}&include_geometry=true`;
                           const resp = await fetch(url);
                           const data = await resp.json();
                           if ((data as any).error) {
@@ -640,13 +641,18 @@ export default function Home() {
               }
             });
 
-            // Add job centers layer with building icon
+            // Add job centers layer - Larger circles for better touch targets
             currentMap.addLayer({
               id: 'job-centers-layer',
               type: 'circle',
               source: 'job-centers',
               paint: {
-                'circle-radius': 8,
+                'circle-radius': [
+                  'interpolate', ['linear'], ['zoom'],
+                  7, 6,    // At zoom 7, radius = 6px (12px diameter)
+                  10, 10,  // At zoom 10, radius = 10px (20px diameter)
+                  14, 14   // At zoom 14, radius = 14px (28px diameter for mobile)
+                ],
                 'circle-stroke-width': 2,
                 'circle-stroke-color': '#ffffff',
                 'circle-color': '#DC2626'  // Red color for job centers
@@ -693,7 +699,7 @@ export default function Home() {
                 </div>
               `;
 
-              new mapboxgl.Popup({ closeButton: true, offset: 15 })
+              new mapboxgl.Popup(getSmartPopupConfig(currentMap, e.point))
                 .setLngLat(coord)
                 .setHTML(popupContent)
                 .addTo(currentMap);
@@ -973,13 +979,18 @@ export default function Home() {
         console.log('Adding new source with data:', fc);
         currentMap.addSource('pois', { type: 'geojson', data: fc });
 
-        // Circle layer for points
+        // Circle layer for points - Larger radius for better mobile touch targets
         currentMap.addLayer({
           id: 'pois-circles',
           type: 'circle',
           source: 'pois',
           paint: {
-            'circle-radius': 6,
+            'circle-radius': [
+              'interpolate', ['linear'], ['zoom'],
+              7, 5,    // At zoom 7, radius = 5px (10px diameter)
+              10, 8,   // At zoom 10, radius = 8px (16px diameter)
+              14, 12   // At zoom 14, radius = 12px (24px diameter for mobile)
+            ],
             'circle-stroke-width': 2,
             'circle-stroke-color': '#ffffff',
             'circle-color': [
@@ -1000,7 +1011,7 @@ export default function Home() {
           if (!f) return;
           const props: any = f.properties || {};
           const coord = (f.geometry as any).coordinates;
-          new mapboxgl.Popup({ closeButton: false, offset: 10 })
+          new mapboxgl.Popup(getSmartPopupConfig(currentMap, e.point))
             .setLngLat(coord)
             .setHTML(
               `<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;min-width:220px">
@@ -1093,21 +1104,21 @@ export default function Home() {
               const isSelected = selectedTypes.includes(type);
               
               return (
-                <label key={type} className="flex items-center gap-3 cursor-pointer group">
-                  <div className="relative">
+                <label key={type} className="flex items-center gap-3 cursor-pointer group min-h-[44px]">
+                  <div className="relative flex items-center justify-center w-11 h-11">
                     <input
                       type="checkbox"
                       checked={isSelected}
                       onChange={() => handleTypeToggle(type)}
                       className="sr-only"
                     />
-                    <div className={`w-5 h-5 rounded border-2 ${
-                      isSelected 
-                        ? 'bg-blue-600 border-blue-600' 
+                    <div className={`w-6 h-6 rounded border-2 ${
+                      isSelected
+                        ? 'bg-blue-600 border-blue-600'
                         : 'border-gray-300 group-hover:border-blue-400'
                     }`}>
                       {isSelected && (
-                        <svg className="w-3 h-3 text-white m-0.5" fill="currentColor" viewBox="0 0 20 20">
+                        <svg className="w-4 h-4 text-white m-0.5" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                         </svg>
                       )}
@@ -1138,21 +1149,21 @@ export default function Home() {
         {/* Statistical Areas Toggle */}
         <div className="mt-6 pt-4 border-t border-gray-200">
           <h3 className="text-sm font-semibold text-gray-900 mb-3">Boundaries</h3>
-          <label className="flex items-center gap-3 cursor-pointer group">
-            <div className="relative">
+          <label className="flex items-center gap-3 cursor-pointer group min-h-[44px]">
+            <div className="relative flex items-center justify-center w-11 h-11">
               <input
                 type="checkbox"
                 checked={showStatisticalAreas}
                 onChange={(e) => setShowStatisticalAreas(e.target.checked)}
                 className="sr-only"
               />
-              <div className={`w-5 h-5 rounded border-2 ${
+              <div className={`w-6 h-6 rounded border-2 ${
                 showStatisticalAreas
                   ? 'bg-blue-600 border-blue-600'
                   : 'border-gray-300 group-hover:border-blue-400'
               }`}>
                 {showStatisticalAreas && (
-                  <svg className="w-3 h-3 text-white m-0.5" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-4 h-4 text-white m-0.5" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
                 )}
@@ -1175,21 +1186,21 @@ export default function Home() {
           </label>
 
           {/* Job Centers Toggle */}
-          <label className="flex items-center space-x-3 cursor-pointer group mt-4">
-            <div className="relative">
+          <label className="flex items-center gap-3 cursor-pointer group mt-4 min-h-[44px]">
+            <div className="relative flex items-center justify-center w-11 h-11">
               <input
                 type="checkbox"
                 checked={showJobCenters}
                 onChange={(e) => setShowJobCenters(e.target.checked)}
                 className="sr-only"
               />
-              <div className={`w-5 h-5 rounded border-2 ${
+              <div className={`w-6 h-6 rounded border-2 ${
                 showJobCenters
                   ? 'bg-blue-600 border-blue-600'
                   : 'border-gray-300 group-hover:border-blue-400'
               }`}>
                 {showJobCenters && (
-                  <svg className="w-3 h-3 text-white m-0.5" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-4 h-4 text-white m-0.5" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
                 )}
@@ -1245,21 +1256,21 @@ export default function Home() {
 
           {/* Enable Distance Calculation Toggle */}
           {selectedJobCenter && (
-            <label className="flex items-center gap-3 cursor-pointer group">
-              <div className="relative">
+            <label className="flex items-center gap-3 cursor-pointer group min-h-[44px]">
+              <div className="relative flex items-center justify-center w-11 h-11">
                 <input
                   type="checkbox"
                   checked={distanceCalculationEnabled}
                   onChange={(e) => setDistanceCalculationEnabled(e.target.checked)}
                   className="sr-only"
                 />
-                <div className={`w-5 h-5 rounded border-2 ${
+                <div className={`w-6 h-6 rounded border-2 ${
                   distanceCalculationEnabled
                     ? 'bg-blue-600 border-blue-600'
                     : 'border-gray-300 group-hover:border-blue-400'
                 }`}>
                   {distanceCalculationEnabled && (
-                    <svg className="w-3 h-3 text-white m-0.5" fill="currentColor" viewBox="0 0 20 20">
+                    <svg className="w-4 h-4 text-white m-0.5" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
                   )}

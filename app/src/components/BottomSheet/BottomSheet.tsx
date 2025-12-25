@@ -28,13 +28,13 @@ export function BottomSheet({
         maxHeight: '85vh',
       }}
     >
-      {/* Handle bar & Header */}
+      {/* Handle bar & Header - Larger touch area for mobile */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex flex-col items-center py-4 px-6 touch-manipulation"
+        className="w-full flex flex-col items-center py-6 px-6 touch-manipulation min-h-[60px]"
       >
-        {/* Drag handle */}
-        <div className="w-12 h-1.5 bg-gray-300 rounded-full mb-3" />
+        {/* Drag handle - increased size for better touch feedback */}
+        <div className="w-16 h-2 bg-gray-300 rounded-full mb-3" />
 
         {/* Title */}
         <div className="w-full flex items-center justify-between">

@@ -246,13 +246,13 @@ def main():
     if passed < total:
         print("\n⚠️  DIAGNOSIS:")
         if not results["OSRM Direct"]:
-            print("  - OSRM API is not accessible")
+            print("  - Mapbox API is not accessible")
             print("  - This will cause all routing to fail")
             print("  - Solutions:")
-            print("    1. Check internet connection")
-            print("    2. Check if router.project-osrm.org is blocked")
-            print("    3. Consider using a different routing API")
-            print("    4. Set up local OSRM server")
+            print("    1. Check Mapbox token in backend/.env")
+            print("    2. Verify token is valid at https://account.mapbox.com")
+            print("    3. Check internet connection")
+            print("    4. Check Mapbox API status: https://status.mapbox.com")
         if not results["Endpoint Small"]:
             print("  - Backend endpoint has issues")
             print("  - Check backend logs for errors")

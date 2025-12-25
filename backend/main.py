@@ -227,9 +227,9 @@ def read_root():
         "total_job_centers": job_centers.get('total', 0)
     }
 
-@app.get("/health/osrm")
-def check_osrm_health():
-    """Check if OSRM routing API is accessible"""
+@app.get("/health/routing")
+def check_routing_health():
+    """Check if Mapbox routing API is accessible"""
     router = OSRMRouter()
 
     # Test with a simple route in Israel (Tel Aviv to nearby point)
@@ -239,10 +239,11 @@ def check_osrm_health():
     result = router.calculate_route_time(tel_aviv, nearby, "driving")
 
     return {
-        "osrm_available": result.success,
+        "routing_available": result.success,
+        "provider": "Mapbox Directions API",
         "error_message": result.error_message if not result.success else None,
         "test_route": "Tel Aviv (short distance)",
-        "recommendation": "Use fallback routing or local OSRM server" if not result.success else "OSRM API working"
+        "recommendation": "Check Mapbox token" if not result.success else "Routing API working"
     }
 
 @app.get("/pois")

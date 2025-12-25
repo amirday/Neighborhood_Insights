@@ -25,7 +25,7 @@ export function RoutingAnalysisPanel({
 
   return (
     <div
-      className="fixed left-4 lg:left-6 bg-emerald-50/95 backdrop-blur-sm border border-emerald-200 rounded-xl shadow-md p-4"
+      className="fixed left-4 lg:left-6 bg-white/95 backdrop-blur-sm border border-gray-200 rounded-xl shadow-md p-6"
       style={{
         top: 'calc(var(--header-height) + 1rem)',
         zIndex: 'var(--z-filter-panel)',
@@ -37,7 +37,7 @@ export function RoutingAnalysisPanel({
           Routing Analysis
         </div>
         {routesLoading && (
-          <div className="w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+          <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
         )}
       </div>
 
@@ -53,8 +53,8 @@ export function RoutingAnalysisPanel({
           <div
             className={`w-5 h-5 rounded border-2 ${
               routesCalculationEnabled
-                ? 'bg-emerald-600 border-emerald-600'
-                : 'border-gray-300 group-hover:border-emerald-400'
+                ? 'bg-blue-600 border-blue-600'
+                : 'border-gray-300 group-hover:border-blue-400'
             }`}
           >
             {routesCalculationEnabled && (
@@ -87,7 +87,7 @@ export function RoutingAnalysisPanel({
       <button
         onClick={onCalculateRoutes}
         disabled={!routesCalculationEnabled || routesLoading}
-        className="w-full text-sm py-2.5 px-4 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+        className="w-full text-sm py-2.5 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
       >
         {routesLoading ? 'Calculating…' : 'Calculate Routes'}
       </button>
@@ -103,7 +103,7 @@ export function RoutingAnalysisPanel({
               <div className="text-xs font-semibold text-red-800 mb-1">Routing Failed</div>
               <div className="text-xs text-red-700">{routingError}</div>
               <div className="text-xs text-red-600 mt-2 italic">
-                Tip: Check if OSRM API is accessible or use a local routing server
+                Tip: Check Mapbox API token or try alternative routing service
               </div>
             </div>
           </div>
@@ -114,12 +114,12 @@ export function RoutingAnalysisPanel({
       {routingStats && !routingError && (
         <div className={`mt-4 p-3 border rounded-lg ${
           routingStats.success_rate > 50
-            ? 'bg-green-50 border-green-200'
+            ? 'bg-blue-50 border-blue-200'
             : 'bg-yellow-50 border-yellow-200'
         }`}>
           <div className="flex items-center gap-2 mb-2">
             <svg className={`w-5 h-5 ${
-              routingStats.success_rate > 50 ? 'text-green-600' : 'text-yellow-600'
+              routingStats.success_rate > 50 ? 'text-blue-600' : 'text-yellow-600'
             }`} fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
             </svg>
@@ -131,7 +131,7 @@ export function RoutingAnalysisPanel({
             <div className="text-xs">
               <div className="text-gray-600">Success Rate</div>
               <div className={`font-semibold ${
-                routingStats.success_rate > 50 ? 'text-green-700' : 'text-yellow-700'
+                routingStats.success_rate > 50 ? 'text-blue-700' : 'text-yellow-700'
               }`}>
                 {routingStats.success_rate}%
               </div>
@@ -151,7 +151,7 @@ export function RoutingAnalysisPanel({
               <div key={mode} className="flex justify-between items-center">
                 <span className="text-gray-600 capitalize">{mode}:</span>
                 <span className={`font-medium ${
-                  stats.success_rate > 50 ? 'text-green-700' : 'text-red-600'
+                  stats.success_rate > 50 ? 'text-blue-700' : 'text-red-600'
                 }`}>
                   {stats.successful}/{stats.successful + stats.failed} ({stats.success_rate}%)
                 </span>
