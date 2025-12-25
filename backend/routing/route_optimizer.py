@@ -11,10 +11,12 @@ from collections import OrderedDict
 import aiohttp
 
 try:
-    from .osrm_router import OSRMRouter, RouteResult
+    from .route_result import RouteResult
+    from .osrm_router import OSRMRouter
     from .transport_modes import TransportModes, OSRM_CONFIG
 except ImportError:
-    from osrm_router import OSRMRouter, RouteResult
+    from route_result import RouteResult
+    from osrm_router import OSRMRouter
     from transport_modes import TransportModes, OSRM_CONFIG
 
 

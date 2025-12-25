@@ -6,43 +6,26 @@ Supports multiple transport modes (car, bike, walking) with road snapping.
 
 import json
 import time
-from dataclasses import dataclass
 from typing import List, Tuple, Optional, Dict, Any, Union
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 try:
-    from .transport_modes import TransportModes, OSRM_CONFIG
+    from .route_result import RouteResult
+    from .transport_modes import TransportModes, OSRM_CONFIG, TRAFFIC_CONFIG
+    from .traffic_router import TrafficRouter
 except ImportError:
-    from transport_modes import TransportModes, OSRM_CONFIG
-
-
-@dataclass
-class RouteResult:
-    """Result from a routing calculation."""
-    duration_seconds: float
-    duration_minutes: float
-    distance_meters: float
-    distance_km: float
-    transport_mode: str
-    geometry: Optional[List[Tuple[float, float]]] = None
-    success: bool = True
-    error_message: Optional[str] = None
-
-    def __post_init__(self):
-        """Calculate derived values."""
-        if self.duration_minutes == 0 and self.duration_seconds > 0:
-            self.duration_minutes = self.duration_seconds / 60.0
-        if self.distance_km == 0 and self.distance_meters > 0:
-            self.distance_km = self.distance_meters / 1000.0
+    from route_result import RouteResult
+    from transport_modes import TransportModes, OSRM_CONFIG, TRAFFIC_CONFIG
+    from traffic_router import TrafficRouter
 
 
 class OSRMRouter:
     """OSRM router for calculating routes between coordinates."""
 
     def __init__(self, cache_ttl: int = OSRM_CONFIG["cache_ttl"]):
-        """Initialize the OSRM router with configured session."""
+        """Initialize the router with Google Maps API."""
         self.session = self._create_session()
         # Import RouteCache for TTL and size-limited caching
         try:
@@ -50,6 +33,17 @@ class OSRMRouter:
         except ImportError:
             from route_optimizer import RouteCache
         self._cache = RouteCache(ttl_seconds=cache_ttl)
+
+        # Initialize Google Maps Traffic Router
+        self._google_router = None
+        if TransportModes.GOOGLE_MAPS_API_KEY:
+            self._google_router = TrafficRouter(
+                api_key=TransportModes.GOOGLE_MAPS_API_KEY,
+                enable_traffic=TRAFFIC_CONFIG.get("enabled", True),
+                traffic_day_of_week=TRAFFIC_CONFIG.get("day_of_week", 1),
+                traffic_hour=TRAFFIC_CONFIG.get("hour", 8),
+                cache=self._cache
+            )
 
     def _create_session(self) -> requests.Session:
         """Create a requests session with retry strategy."""
@@ -157,7 +151,7 @@ class OSRMRouter:
                            transport_mode: str = "driving",
                            return_geometry: bool = False) -> RouteResult:
         """
-        Calculate route time between two coordinates.
+        Calculate route time between two coordinates using Google Maps API.
 
         Args:
             origin: (latitude, longitude) of origin
@@ -168,74 +162,18 @@ class OSRMRouter:
         Returns:
             RouteResult with timing and distance information
         """
-        # Validate inputs
-        if not self._validate_coordinates(origin[0], origin[1]):
-            return RouteResult(
-                duration_seconds=0, duration_minutes=0, distance_meters=0, distance_km=0,
-                transport_mode=transport_mode, success=False,
-                error_message=f"Invalid origin coordinates: {origin}"
+        # Use Google Maps router if available
+        if self._google_router:
+            return self._google_router.calculate_route_time(
+                origin, destination, transport_mode, return_geometry
             )
 
-        if not self._validate_coordinates(destination[0], destination[1]):
-            return RouteResult(
-                duration_seconds=0, duration_minutes=0, distance_meters=0, distance_km=0,
-                transport_mode=transport_mode, success=False,
-                error_message=f"Invalid destination coordinates: {destination}"
-            )
-
-        if not TransportModes.is_valid_mode(transport_mode):
-            return RouteResult(
-                duration_seconds=0, duration_minutes=0, distance_meters=0, distance_km=0,
-                transport_mode=transport_mode, success=False,
-                error_message=f"Invalid transport mode: {transport_mode}"
-            )
-
-        # Check cache
-        cache_key = self._cache_key(origin, destination, transport_mode)
-        cached_result = self._get_cached_route(cache_key)
-        if cached_result:
-            return cached_result
-
-        # Make OSRM request with error handling
-        url = self._format_osrm_url(origin, destination, transport_mode, return_geometry)
-
-        try:
-            response = self.session.get(url, timeout=OSRM_CONFIG["timeout"])
-            response.raise_for_status()
-
-            response_data = response.json()
-            result = self._parse_osrm_response(response_data, transport_mode)
-
-            # Cache successful results
-            if result.success:
-                self._cache_route(cache_key, result)
-
-            return result
-
-        except requests.exceptions.Timeout:
-            return RouteResult(
-                duration_seconds=0, duration_minutes=0, distance_meters=0, distance_km=0,
-                transport_mode=transport_mode, success=False,
-                error_message="Mapbox API timeout - service not responding"
-            )
-        except requests.exceptions.ConnectionError:
-            return RouteResult(
-                duration_seconds=0, duration_minutes=0, distance_meters=0, distance_km=0,
-                transport_mode=transport_mode, success=False,
-                error_message="Mapbox API connection failed - service unreachable"
-            )
-        except requests.exceptions.HTTPError as e:
-            return RouteResult(
-                duration_seconds=0, duration_minutes=0, distance_meters=0, distance_km=0,
-                transport_mode=transport_mode, success=False,
-                error_message=f"Mapbox API HTTP error: {e.response.status_code}"
-            )
-        except Exception as e:
-            return RouteResult(
-                duration_seconds=0, duration_minutes=0, distance_meters=0, distance_km=0,
-                transport_mode=transport_mode, success=False,
-                error_message=f"Mapbox API error: {str(e)}"
-            )
+        # Fallback error if Google router not initialized
+        return RouteResult(
+            duration_seconds=0, duration_minutes=0, distance_meters=0, distance_km=0,
+            transport_mode=transport_mode, success=False,
+            error_message="Google Maps API not configured - please set GOOGLE_MAPS_API_KEY"
+        )
 
     def calculate_routes_batch(self, origin: Tuple[float, float],
                              destinations: List[Tuple[float, float]],

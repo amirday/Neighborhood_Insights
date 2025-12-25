@@ -26,9 +26,12 @@ class TransportMode:
 class TransportModes:
     """Transport mode configurations for Mapbox routing."""
 
-    # Mapbox API configuration
+    # Mapbox API configuration (legacy - now using Google Maps)
     MAPBOX_TOKEN = os.getenv("MAPBOX_ACCESS_TOKEN")
     MAPBOX_BASE_URL = "https://api.mapbox.com/directions/v5/mapbox"
+
+    # Google Maps API configuration
+    GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 
     # Transport mode configurations
     DRIVING = TransportMode(
@@ -88,5 +91,14 @@ OSRM_CONFIG = {
     "retry_delay": 1.0,  # seconds
     "cache_ttl": 3600,  # 1 hour cache
     "batch_size": 100,  # max coordinates per batch request
+}
+
+# Traffic configuration for Google Maps
+TRAFFIC_CONFIG = {
+    "enabled": os.getenv("TRAFFIC_ENABLED", "true").lower() == "true",
+    "day_of_week": int(os.getenv("TRAFFIC_DAY_OF_WEEK", "1")),  # 0=Sunday, 1=Monday
+    "hour": int(os.getenv("TRAFFIC_HOUR", "8")),  # 8 AM
+    "cache_ttl": int(os.getenv("TRAFFIC_CACHE_TTL", "604800")),  # 1 week
+    "traffic_model": "best_guess",  # Options: best_guess, pessimistic, optimistic
 }
 
