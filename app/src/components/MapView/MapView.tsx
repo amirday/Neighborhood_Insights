@@ -3,25 +3,27 @@
 import { useRef, useEffect } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import { useMapStore } from '@/stores/mapStore';
 
 interface MapViewProps {
-  onMapReady: (map: mapboxgl.Map) => void;
   className?: string;
 }
 
-export function MapView({ onMapReady, className = '' }: MapViewProps) {
+export function MapView({ className = '' }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
-  const map = useRef<mapboxgl.Map | null>(null);
+  const mapRef = useRef<mapboxgl.Map | null>(null);
+  const setMap = useMapStore((state) => state.setMap);
+  const setMapReady = useMapStore((state) => state.setMapReady);
 
   useEffect(() => {
-    if (map.current) return;
+    if (mapRef.current) return;
 
     mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN!;
 
     if (mapContainer.current) {
-      map.current = new mapboxgl.Map({
+      mapRef.current = new mapboxgl.Map({
         container: mapContainer.current,
-        style: 'mapbox://styles/mapbox/streets-v12',
+        style: 'mapbox://styles/mapbox/light-v11',
         center: [35.2, 31.5], // Center of Israel
         zoom: 7,
         fadeDuration: 0,
@@ -30,22 +32,42 @@ export function MapView({ onMapReady, className = '' }: MapViewProps) {
       });
 
       // Add navigation control (zoom buttons)
-      map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+      mapRef.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+
+      // Store map instance in Zustand
+      setMap(mapRef.current);
 
       // Set map as ready when style is loaded
-      if (map.current.isStyleLoaded()) {
+      if (mapRef.current.isStyleLoaded()) {
         console.log('Map style already loaded, setting map ready');
-        onMapReady(map.current);
+        setMapReady(true);
       } else {
-        map.current.on('style.load', () => {
+        mapRef.current.on('style.load', () => {
           console.log('Map style loaded, setting map ready');
-          if (map.current) {
-            onMapReady(map.current);
-          }
+          setMapReady(true);
         });
       }
     }
-  }, [onMapReady]);
+
+    // Add ESC key handler to close popups
+    const handleEscKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' || e.key === 'Esc') {
+        const popups = document.querySelectorAll('.mapboxgl-popup');
+        popups.forEach(popup => popup.remove());
+      }
+    };
+
+    document.addEventListener('keydown', handleEscKey);
+
+    // Cleanup
+    return () => {
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+      document.removeEventListener('keydown', handleEscKey);
+    };
+  }, [setMap, setMapReady]);
 
   return (
     <div

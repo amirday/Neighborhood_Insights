@@ -68,7 +68,7 @@ def load_mosdot_data():
     Expected columns include at least: 'lon', 'lat', and Hebrew name fields.
     We coerce lon/lat to floats and skip rows without valid coordinates.
     """
-    mosdot_file = PROCESSED_PATH / "mosdot_2.csv"
+    mosdot_file = PROCESSED_PATH / "mosdot.csv"
     pois: list[dict] = []
     if not mosdot_file.exists():
         print(f"mosdot.csv not found at {mosdot_file}")
