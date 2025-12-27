@@ -79,6 +79,7 @@ export function POILayer() {
             'kindergartens', colors.poi.kindergartens,
             'clinics', colors.poi.clinics,
             'bus_stops', colors.poi.bus_stops,
+            'train_stations', colors.poi.train_stations,
             colors.neutral[600], // Default gray for unknown types
           ],
         },

@@ -68,7 +68,7 @@ def load_mosdot_data():
     Expected columns include at least: 'lon', 'lat', and Hebrew name fields.
     We coerce lon/lat to floats and skip rows without valid coordinates.
     """
-    mosdot_file = PROCESSED_PATH / "mosdot.csv"
+    mosdot_file = PROCESSED_PATH / "mosdot_5.csv"
     pois: list[dict] = []
     if not mosdot_file.exists():
         print(f"mosdot.csv not found at {mosdot_file}")
@@ -143,6 +143,71 @@ def load_mosdot_data():
 
     return pois
 
+def load_train_stations_data():
+    """Load train stations from the processed CSV file.
+
+    Expected columns: id, display_name, name, name_he, name_en, lat, lon, type, railway, operator
+    """
+    train_stations_file = PROCESSED_PATH / "train_stations.csv"
+    stations: list[dict] = []
+
+    if not train_stations_file.exists():
+        print(f"train_stations.csv not found at {train_stations_file}")
+        return stations
+
+    total_rows = 0
+    no_coords_count = 0
+    out_of_bounds_count = 0
+
+    try:
+        with open(train_stations_file, "r", encoding="utf-8-sig", newline="") as f:
+            reader = csv.DictReader(f)
+            for idx, row in enumerate(reader, start=1):
+                total_rows += 1
+                lon = _safe_float(row.get("lon", ""))
+                lat = _safe_float(row.get("lat", ""))
+
+                if lon is None or lat is None:
+                    no_coords_count += 1
+                    continue
+
+                # Filter to Israel bounding box
+                if not (29.0 <= lat <= 33.8 and 34.2 <= lon <= 35.9):
+                    out_of_bounds_count += 1
+                    continue
+
+                # Use display_name (Hebrew) or fall back to name
+                name_he = row.get("display_name") or row.get("name_he") or row.get("name", "")
+                name_en = row.get("name_en") or row.get("name", "Train Station")
+                operator = row.get("operator", "")
+                railway_type = row.get("railway", "station")
+
+                # Create POI entry
+                stations.append({
+                    "id": f"train_{row.get('id', idx)}",  # Prefix with 'train_' to avoid ID conflicts
+                    "name_he": name_he,
+                    "name_en": name_en,
+                    "type": "train_stations",
+                    "longitude": lon,
+                    "latitude": lat,
+                    "address": "",  # Train stations don't have typical addresses
+                    "symbol": "",
+                    "operator": operator,
+                    "railway_type": railway_type,
+                })
+    except Exception as e:
+        print(f"Error loading train_stations.csv: {e}")
+
+    print(f"TRAIN STATIONS LOADING SUMMARY:")
+    print(f"  Total rows processed: {total_rows}")
+    print(f"  Rows without coordinates: {no_coords_count}")
+    print(f"  Rows outside bounds: {out_of_bounds_count}")
+    print(f"  Train stations loaded: {len(stations)}")
+    if total_rows > 0:
+        print(f"  Success rate: {len(stations)/total_rows*100:.1f}%")
+
+    return stations
+
 def load_statistical_areas():
     """Load statistical areas data from processed files."""
 
@@ -214,7 +279,12 @@ def load_job_centers():
     return job_centers_data
 
 # Load data on startup
-pois_data = load_mosdot_data()
+mosdot_pois = load_mosdot_data()
+train_stations = load_train_stations_data()
+# Combine all POI types into a single list
+pois_data = mosdot_pois + train_stations
+print(f"Total POIs available: {len(pois_data)} (mosdot: {len(mosdot_pois)}, train stations: {len(train_stations)})")
+
 statistical_areas = load_statistical_areas()
 job_centers = load_job_centers()
 
@@ -662,34 +732,20 @@ def calculate_routes_areas_to_center(payload: dict):
             future_to_id = {}
             for cand in candidates:
                 origin = (cand["lat"], cand["lon"])  # area -> center
-                # Transit mode: use driving time × 2 as heuristic
-                if mode == "transit":
-                    future = executor.submit(router.calculate_route_time, origin, center_coord, "driving")
-                    future_to_id[future] = (cand["area_id"], True)  # Mark as transit heuristic
-                else:
-                    future = executor.submit(router.calculate_route_time, origin, center_coord, mode)
-                    future_to_id[future] = (cand["area_id"], False)
+                # Submit route calculation for all modes (including transit)
+                future = executor.submit(router.calculate_route_time, origin, center_coord, mode)
+                future_to_id[future] = cand["area_id"]
 
             for future in as_completed(future_to_id):
-                area_id, is_transit_heuristic = future_to_id[future]
+                area_id = future_to_id[future]
                 try:
                     res: RouteResult = future.result()
-                    if is_transit_heuristic and res.success:
-                        # Double the driving time for transit estimate
-                        results[area_id] = {
-                            "duration_minutes": round(res.duration_minutes * 2, 1),
-                            "distance_km": round(res.distance_km, 2),
-                            "success": True,
-                            "mode": "transit",
-                            "method": "heuristic_2x_driving"
-                        }
-                    else:
-                        results[area_id] = {
-                            "duration_minutes": round(res.duration_minutes, 1) if res.success else None,
-                            "distance_km": round(res.distance_km, 2) if res.success else None,
-                            "success": bool(res.success),
-                            "mode": mode
-                        }
+                    results[area_id] = {
+                        "duration_minutes": round(res.duration_minutes, 1) if res.success else None,
+                        "distance_km": round(res.distance_km, 2) if res.success else None,
+                        "success": bool(res.success),
+                        "mode": mode
+                    }
                 except Exception as e:
                     results[area_id] = {
                         "duration_minutes": None,
@@ -808,16 +864,6 @@ def calculate_route_area_to_center(center_id: int, area_id: int, modes: Optional
     router = OSRMRouter()
     results: dict[str, dict] = {}
     for mode in mode_list:
-        if mode == "transit":
-            # No graceful fallback for transit
-            results[mode] = {
-                "duration_minutes": None,
-                "distance_km": None,
-                "success": False,
-                "mode": "transit",
-                "error": "Transit routing not supported"
-            }
-            continue
         try:
             res = router.calculate_route_time(origin, center_coord, mode, return_geometry=include_geometry)
             payload = {

@@ -112,6 +112,7 @@ export const colors = {
     kindergartens: '#10B981',  // Green
     clinics: '#DC2626',        // Red
     bus_stops: '#F59E0B',      // Amber
+    train_stations: '#8B5CF6', // Violet (from transit color)
   },
 
   // Map Colors

@@ -137,10 +137,13 @@ class TrafficRouter:
             "key": self.api_key
         }
 
-        # Add traffic for driving mode only
+        # Add departure_time for driving (with traffic) and transit
         if transport_mode == "driving" and self.enable_traffic:
             params["departure_time"] = self._calculate_next_occurrence()
             params["traffic_model"] = "best_guess"
+        elif transport_mode == "transit":
+            # Transit requires departure_time for schedule-based routing
+            params["departure_time"] = self._calculate_next_occurrence()
 
         # Add alternatives for better routing
         params["alternatives"] = "false"
